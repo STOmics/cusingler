@@ -1,0 +1,4 @@
+*.h5
+build/
+install/
+settings.json
