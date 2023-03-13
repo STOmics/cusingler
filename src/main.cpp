@@ -20,10 +20,11 @@ int main(int argc, char** argv)
     }
     string filename(argv[1]);
     InputData data;
+    cout<<"start loading data."<<endl;
     if (!readInput(filename, data))
-        cerr<<"failed reading input h5 file."<<endl;
+        cerr<<"failed loading input h5 file."<<endl;
     else
-        cout<<"success reading input h5 file."<<endl;
+        cout<<"success loading input h5 file."<<endl;
 
     return 0;
 }
