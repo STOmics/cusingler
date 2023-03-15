@@ -4,8 +4,7 @@
 * Written by STOmics development team P_stomics_dev@genomics.cn, 2023
 */
 
-#include "io.h"
-#include "types.h"
+#include "pipeline.h"
 
 #include <iostream>
 #include <string>
@@ -19,12 +18,10 @@ int main(int argc, char** argv)
         exit(-1);
     }
     string filename(argv[1]);
-    InputData data;
-    cout<<"start loading data."<<endl;
-    if (!readInput(filename, data))
-        cerr<<"failed loading input h5 file."<<endl;
-    else
-        cout<<"success loading input h5 file."<<endl;
+    
+    Pipeline pipeline = Pipeline(filename);
+    pipeline.preprocess();
+    pipeline.copytogpu();
 
     return 0;
 }

@@ -16,29 +16,31 @@ using namespace H5;
 
 bool readObs(H5File* file, InputData& data)
 {
-    vector<string> obs_key, obs_value;
+    // StrType str_type(PredType::C_S1, H5T_VARIABLE);
+    // str_type.setCset(H5T_CSET_UTF8);
 
     DataSet dataset = DataSet(file->openDataSet("/obs_key"));
     auto   datatype   = dataset.getDataType();
     DataSpace dataspace = dataset.getSpace();
     hsize_t dims[1];
     dataspace.getSimpleExtentDims(dims, NULL);
-    obs_key.resize(dims[0]);
-    dataset.read(&obs_key[0], datatype);
-
+    char* obs_key[dims[0]];
+    dataset.read(obs_key, datatype);
+   
     dataset = DataSet(file->openDataSet("/obs_value"));
-    obs_value.resize(dims[0]);
+    char* obs_value[dims[0]];
     dataset.read(&obs_value[0], datatype);
 
-    size_t pos1, pos2;
-    for (size_t i = 0; i < obs_key.size(); ++i)
+    for (size_t i = 0; i < dims[0]; ++i)
     {
-        pos1 = obs_key[i].find('\0');
-        pos2 = obs_value[i].find('\0');
-        data.obs.insert({obs_key[i].substr(0,pos1), obs_value[i].substr(0,pos2)});
+        // data.obs.insert({obs_key[i], obs_value[i]});
+        data.obs_keys.push_back(obs_key[i]);
+        data.obs_values.push_back(obs_value[i]);
     }
 
-    cout<<"obs size: "<<data.obs.size()<<endl;
+    cout<<"obs size: "<<data.obs_keys.size()<<endl;
+    // for (auto&[k, v] : data.obs)
+    //     cout<<k<<" "<<v<<endl;
 
     return true;
 }
@@ -60,7 +62,9 @@ bool readRef(H5File* file, InputData& data)
     ref.resize(ref_size);
     dataset.read(&ref[0], datatype);
 
-    cout<<"ref size: "<<ref.size()<<endl;
+    data.ref_cell_num = dims[0];
+    data.ref_gene_num = dims[1];
+    cout<<"ref size: "<<ref.size()<<" "<<dims[0]<<" x "<<dims[1]<<endl;
 
     return true;
 }
@@ -82,14 +86,16 @@ bool readTest(H5File* file, InputData& data)
     test.resize(test_size);
     dataset.read(&test[0], datatype);
 
-    cout<<"test size: "<<test.size()<<endl;
+    data.test_cell_num = dims[0];
+    data.test_gene_num = dims[1];
+    cout<<"test size: "<<test.size()<<" "<<dims[0]<<" x "<<dims[1]<<endl;
 
     return true;
 }
 
-bool readCelltype(H5File* file, InputData& data)
+bool readLabels(H5File* file, InputData& data)
 {
-    auto& celltype = data.celltype;
+    auto& labels = data.labels;
 
     DataSet dataset = DataSet(file->openDataSet("/tmp"));
     auto   datatype   = dataset.getDataType();
@@ -101,10 +107,23 @@ bool readCelltype(H5File* file, InputData& data)
     size_t test_size = 1;
     for (int i = 0; i < rank; ++i)
         test_size *= dims[i];
-    celltype.resize(test_size);
-    dataset.read(&celltype[0], datatype);
+    labels.resize(test_size);
+    dataset.read(&labels[0], datatype);
 
-    cout<<"celltype size: "<<celltype.size()<<endl;
+    cout<<"labels size: "<<labels.size()<<" "<<dims[0]<<" x "<<dims[1]<<endl;
+
+    Attribute attr(dataset.openAttribute("order"));
+    datatype = attr.getDataType();
+    dataspace = attr.getSpace();
+    dataspace.getSimpleExtentDims(dims, NULL);
+    char* orders[dims[0]];
+    attr.read(datatype, orders);
+
+    for (int i = 0; i < dims[0]; ++i)
+    {
+        data.celltypes.push_back(orders[i]);
+    }
+    cout<<"celltypes size: "<<data.celltypes.size()<<endl;
 
     return true;
 }
@@ -124,7 +143,7 @@ bool readTrained(H5File* file, InputData& data)
     };
     vector<string> ids;
     Group group = Group(file->openGroup("/trained"));
-    herr_t idx = H5Literate(group.getId(), H5_INDEX_NAME, H5_ITER_INC, NULL, file_info, &ids);
+    H5Literate(group.getId(), H5_INDEX_NAME, H5_ITER_INC, NULL, file_info, &ids);
 
     auto& trained = data.trained;
     for (auto& id : ids)
@@ -166,8 +185,8 @@ bool readInput(string& filename, InputData& data)
     // read query data from matrix to list
     readTest(file, data);
 
-    // read celltypes
-    readCelltype(file, data);
+    // read labels
+    readLabels(file, data);
 
     // read trained data
     readTrained(file, data);
@@ -177,4 +196,5 @@ bool readInput(string& filename, InputData& data)
 
     return true;
 }
+
 

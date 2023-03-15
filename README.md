@@ -6,14 +6,15 @@
 
 ## 依赖库
 
-* gcc 11.3
+* gcc/g++ 9.4.0 
 * cmake 3.25.2
 * hdf5 1.12.1
+* cuda-toolkit 11.4
 
 推荐使用conda安装依赖库
 
 ```sh
-conda install -c conda-forge hdf5 cmake gcc cxx-compiler
+conda install -c conda-forge hdf5 cmake gcc==9.4.0 gxx==9.4.0
 ```
 
 ## 编译
@@ -25,11 +26,20 @@ conda install -c conda-forge hdf5 cmake gcc cxx-compiler
 ```sh
 mkdir build && cd build
 
+export PATH=/usr/local/cuda/bin:/home/fxzhao/anaconda3/envs/singlerr/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin
+
 export HDF5_PATH=/home/fxzhao/anaconda3/envs/singlerr
-export CPLUS_INCLUDE_PATH=$HDF5_PATH/include:/home/fxzhao/anaconda3/envs/py/include
-export LD_LIBRARY_PATH=$HDF5_PATH/lib
+export CPLUS_INCLUDE_PATH=/usr/local/cuda/include/:$HDF5_PATH/include
+
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$HDF5_PATH/lib
 export LIBRARY_PATH=$LD_LIBRARY_PATH
 
 cmake .. --fresh -DCMAKE_INSTALL_PREFIX=../install -DHDF5_LIB=${HDF5_PATH}/lib
 make
+```
+
+## 运行
+
+```sh
+./install/bin/cusingler ./data/small_input.h5
 ```
