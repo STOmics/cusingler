@@ -21,7 +21,7 @@ int main(int argc, char** argv)
     
     Pipeline pipeline = Pipeline(filename);
     pipeline.preprocess();
-    pipeline.copytogpu();
+    pipeline.work();
 
     return 0;
 }

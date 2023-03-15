@@ -39,6 +39,19 @@ bool init()
     return true;
 }
 
+bool destroy()
+{
+    cudaFree(d_ref);
+    cudaFree(d_qry);
+    cudaFree(d_labels);
+    cudaFree(d_ctids);
+    cudaFree(d_ctidx);
+    cudaFree(d_ctdiff);
+    cudaFree(d_ctdidx);
+
+    return true;
+}
+
 bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, vector<uint32>& ctdiff, vector<uint32>& ctdidx)
 {
     ref_height = rawdata.ref_gene_num;
@@ -66,9 +79,22 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     // std::this_thread::sleep_for(std::chrono::seconds(5));
     std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
 
-    cudaFree(d_ref);
-    cudaFree(d_qry);
-    cudaFree(d_labels);
+    return true;
+}
 
+bool finetune_round(float* qry, float* labels)
+{
+    // TODO
+    return true;
+}
+
+bool finetune()
+{
+    // process each cell
+    for (int i = 0; i < qry_height; ++i)
+    {
+        finetune_round(d_qry+i*qry_width, d_labels+i*ct_num);
+    }
+ 
     return true;
 }
