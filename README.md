@@ -14,7 +14,10 @@
 推荐使用conda安装依赖库
 
 ```sh
-conda install -c conda-forge hdf5 cmake gcc==9.4.0 gxx==9.4.0
+conda create -n cs python=3.8
+conda activate cs
+conda install -c conda-forge mamba
+mamba install -c conda-forge hdf5 cmake gcc==9.4.0 gxx==9.4.0 gxx_linux-64=9.4 gcc_linux-64=9.4 sysroot_linux-64=2.17
 ```
 
 ## 编译
