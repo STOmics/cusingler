@@ -49,7 +49,7 @@ bool destroy()
     cudaFree(d_qry);
     // cudaFree(d_labels);
     cudaFree(d_ctids);
-    cudaStreamDestroy();
+    cudaStreamDestroy(stream);
     // cudaFree(d_ctidx);
     // cudaFree(d_ctdiff);
     // cudaFree(d_ctdidx);
@@ -102,7 +102,7 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     // cudaMemcpy(d_ctdidx, ctdidx.data(), ctdidx.size() * sizeof(uint32), cudaMemcpyHostToDevice);
     h_ctdiff = ctdiff;
     h_ctdidx = ctdidx;
-
+    cudaStreamSynchronize(stream);
     // std::this_thread::sleep_for(std::chrono::seconds(5));
     std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
 
