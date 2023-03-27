@@ -20,7 +20,8 @@ uint32 ct_num;
 uint32* d_ctids;
 vector<uint32> h_ctidx;
 vector<uint32> h_ctdiff, h_ctdidx;
-
+size_t pitchref;
+size_t pitchqry;
 // unit is MB
 uint32 getUsedMem()
 {
@@ -37,7 +38,8 @@ bool init()
     ref_height = ref_width = qry_height = qry_width = 0;
     ct_num = 0;
     d_ctids = NULL;
-
+    pitchref=0;
+    pitchqry=0;
     return true;
 }
 
@@ -73,8 +75,7 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     // cout<<"qry width: "<<qry_width<<endl;
     // cout<<"qry max value: "<<max_val<<endl;
     //
-    size_t pitchref;
-    size_t pitchqry;
+
 
     cudaMallocPitch((void**)&d_ref,&pitchref,ref_width*sizeof(float),ref_height);
     cudaMallocPitch((void**)&d_qry,&pitchqry,qry_width*sizeof(float),qry_height);
