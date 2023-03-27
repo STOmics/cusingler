@@ -72,18 +72,27 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     // }
     // cout<<"qry width: "<<qry_width<<endl;
     // cout<<"qry max value: "<<max_val<<endl;
+    //
+    size_t pitchref;
+    size_t pitchqry;
 
-    cudaMalloc((void**)&d_ref, ref_height * ref_width * sizeof(float));
-    cudaMalloc((void**)&d_qry, qry_height * qry_width * sizeof(float));
+    cudaMallocPitch((void**)&d_ref,&pitchref,ref_width*sizeof(float),ref_height);
+    cudaMallocPitch((void**)&d_qry,&pitchqry,qry_width*sizeof(float),qry_height);
+    //cudaMalloc((void**)&d_ref, ref_height * ref_width * sizeof(float));
+    //cudaMalloc((void**)&d_qry, qry_height * qry_width * sizeof(float));
     // cudaMalloc((void**)&d_labels, qry_height * ct_num * sizeof(float));
     cudaMalloc((void**)&d_ctids, ctids.size() * sizeof(uint32));
     // cudaMalloc((void**)&d_ctidx, ctidx.size() * sizeof(uint32));
     // cudaMalloc((void**)&d_ctdiff, ctdiff.size() * sizeof(uint32));
     // cudaMalloc((void**)&d_ctdidx, ctdidx.size() * sizeof(uint32));
 
-    cudaMemcpyAsync(d_ref, rawdata.ref.data(), ref_height * ref_width * sizeof(float), cudaMemcpyHostToDevice,stream);
-    cudaMemcpyAsync(d_qry, rawdata.test.data(), qry_height * qry_width * sizeof(float), cudaMemcpyHostToDevice,stream);
-    // cudaMemcpy(d_labels, rawdata.labels.data(), qry_height * ct_num * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy2DAsync(d_ref,pitchref, rawdata.ref.data(), ref_width * sizeof(float),ref_width * sizeof(float),ref_height,cudaMemcpyHostToDevice,stream);
+    cudaMemcpy2DAsync(d_qry,pitchqry, rawdata.test.data(),qry_width * sizeof(float),qry_width * sizeof(float),qry_height,cudaMemcpyHostToDevice,stream);
+   
+
+    // cudaMemcpyAsync(d_ref, rawdata.ref.data(), ref_height * ref_width * sizeof(float), cudaMemcpyHostToDevice,stream);
+    // cudaMemcpyAsync(d_qry, rawdata.test.data(), qry_height * qry_width * sizeof(float), cudaMemcpyHostToDevice,stream);
+    // // cudaMemcpy(d_labels, rawdata.labels.data(), qry_height * ct_num * sizeof(float), cudaMemcpyHostToDevice);
     h_labels = rawdata.labels;
     cudaMemcpyAsync(d_ctids, ctids.data(), ctids.size() * sizeof(uint32), cudaMemcpyHostToDevice,stream);
     // cudaMemcpy(d_ctidx, ctidx.data(), ctidx.size() * sizeof(uint32), cudaMemcpyHostToDevice);
