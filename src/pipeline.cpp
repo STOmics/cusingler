@@ -84,11 +84,17 @@ bool Pipeline::preprocess()
     return true;
 }
 
-bool Pipeline::copytogpu()
+bool Pipeline::work()
 {
-    cout<<"copytogpu()"<<endl;
+    cout<<"work()"<<endl;
+
     init();
+
     copyin(rawdata, ctids, ctidx, ctdiff, ctdidx);
+
+    finetune();
+
+    destroy();
 
     return true;
 }

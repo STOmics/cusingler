@@ -18,7 +18,7 @@ public:
     Pipeline(string filename);
     ~Pipeline() {};
     bool preprocess();
-    bool copytogpu();
+    bool work();
 
 private:
     InputData rawdata;
@@ -27,6 +27,6 @@ private:
 
     vector<uint32> ctdiff;  // gene index of between two cell types in ref data
     vector<uint32> ctdidx;
-    
+
     uint32 label_num;
 };
