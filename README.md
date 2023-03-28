@@ -14,21 +14,26 @@
 推荐使用conda安装依赖库
 
 ```sh
-conda install -c conda-forge hdf5 cmake gcc==9.4.0 gxx==9.4.0
+conda create -n cs python=3.8
+conda activate cs
+conda install -c conda-forge mamba
+mamba install -c conda-forge hdf5 cmake gcc==9.4.0 gxx==9.4.0 gxx_linux-64=9.4 gcc_linux-64=9.4 sysroot_linux-64=2.17
 ```
 
 ## 编译
 
 进入代码仓库根目录,创建build目录,在其中进行编译,编译后的可执行和依赖库放在install目录下.
 
-需要设置gcc/hdf5等库路径.
+需要设置gcc/hdf5等库路径,将上述conda环境替换为环境变量 $condaPath
 
 ```sh
 mkdir build && cd build
 
-export PATH=/usr/local/cuda/bin:/home/fxzhao/anaconda3/envs/singlerr/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin
+condaPath=/home/fxzhao/anaconda3/envs/singlerr
 
-export HDF5_PATH=/home/fxzhao/anaconda3/envs/singlerr
+export PATH=/usr/local/cuda/bin:$condaPath/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin
+
+export HDF5_PATH=$condaPath
 export CPLUS_INCLUDE_PATH=/usr/local/cuda/include/:$HDF5_PATH/include
 
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$HDF5_PATH/lib

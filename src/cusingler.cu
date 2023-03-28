@@ -169,11 +169,9 @@ bool finetune_round(float* qry, float* labels, int line_num)
     
     for (auto& i : top_labels)//??line 159  topl cant be 0??
     {
-        if (h_labels.at(start + i) == 0)
-            continue;
         for (auto& j : top_labels)
         {
-            if (i == j || h_labels.at(start + j) == 0)//same cant be 0?
+            if (i == j)//same cant be 0?
                 continue;
             int pos = h_ctdidx[(i * ct_num + j) * 2];
             int len = h_ctdidx[(i * ct_num + j) * 2 + 1];
