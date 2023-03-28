@@ -11,7 +11,7 @@
 #include <set>
 
 #include "cuda_runtime.h"
-
+cudaError_t errcode;
 cudaStream_t stream;
 float* d_ref, *d_qry;
 vector<float> h_labels;
@@ -29,7 +29,12 @@ uint32 getUsedMem()
     cudaMemGetInfo(&free, &total);
     return (total-free)/1024/1024;
 }
-
+bool err_check()
+{
+    if(errcode!=cudaSuccess)
+        std::cout << "cudaerrcode:"<<errcode<<" line = %d" << __LINE__<<endl;
+     return true;
+}
 bool init()
 {
     stream =NULL;
@@ -76,9 +81,13 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     // cout<<"qry max value: "<<max_val<<endl;
     //
 
-
-    cudaMallocPitch((void**)&d_ref,&pitchref,ref_width*sizeof(float),ref_height);
+    cudaError_t cudaerr;
+    cudaerr=cudaMallocPitch((void**)&d_ref,&pitchref,ref_width*sizeof(float),ref_height);
     cudaMallocPitch((void**)&d_qry,&pitchqry,qry_width*sizeof(float),qry_height);
+    
+    std::cout<<"pitchref: "<<pitchref<<std::endl;
+    std::cout<<"pitchqry: "<<pitchqry<<std::endl;
+
     //cudaMalloc((void**)&d_ref, ref_height * ref_width * sizeof(float));
     //cudaMalloc((void**)&d_qry, qry_height * qry_width * sizeof(float));
     // cudaMalloc((void**)&d_labels, qry_height * ct_num * sizeof(float));
@@ -114,7 +123,7 @@ __global__ void get_device_qry_line(uint32* gene_idx, float* qry, const uint32 l
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < len)
     {
-        res[tid] = qry[gene_len-gene_idx[tid]-1];
+        res[tid] = qry[gene_len-gene_idx[tid]-1];//gene_len-1=idx_max    g_idx  int->float res dqry-line descending order
     }
 }
 
@@ -144,26 +153,27 @@ bool finetune_round(float* qry, float* labels, int line_num)
 {
     // get filtered genes
     vector<uint32> top_labels;
+    uint32 start = line_num * ct_num;
     for (int i = 0; i < ct_num; ++i)
     {
-        if (h_labels.at(line_num * ct_num + i) != 0)
+        if (h_labels.at(start + i) != 0)
             top_labels.push_back(i);
     }
-    cout<<"labels: ";
+    cout<<"top_labels: ";
     for (auto& label : top_labels)
         cout<<label<<" ";
     cout<<"\ntop label num: "<<top_labels.size() <<" ct_num: "<<ct_num<<endl;
     set<uint32> uniq_genes;
     int gene_thre = round(500 * pow((2/3.0), log2(top_labels.size())));
     cout<<"gene_thre: "<<gene_thre<<endl;
-    uint32 start = line_num * ct_num;
-    for (auto& i : top_labels)
+    
+    for (auto& i : top_labels)//??line 159  topl cant be 0??
     {
         if (h_labels.at(start + i) == 0)
             continue;
         for (auto& j : top_labels)
         {
-            if (i == j || h_labels.at(start + j) == 0)
+            if (i == j || h_labels.at(start + j) == 0)//same cant be 0?
                 continue;
             int pos = h_ctdidx[(i * ct_num + j) * 2];
             int len = h_ctdidx[(i * ct_num + j) * 2 + 1];
@@ -188,14 +198,14 @@ bool finetune_round(float* qry, float* labels, int line_num)
     // cudaMemcpy(d_qry_line, h_qry_line.data(), h_qry_line.size()*sizeof(float), cudaMemcpyHostToDevice);
     get_device_qry_line<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_gene_idx, qry, h_gene_idx.size(), qry_width, d_qry_line);
 
-    // check result of get_device_qry_line()
-    // vector<float> tmp_qry_line;
-    // tmp_qry_line.resize(h_gene_idx.size(), 0);
-    // cudaMemcpy(tmp_qry_line.data(), d_qry_line, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
-    // cout<<tmp_qry_line.size()<<endl;
-    // for (int i = 0; i < tmp_qry_line.size(); ++i)
-    //     cout<<tmp_qry_line[i]<<" ";
-    // cout<<endl;
+    //check result of get_device_qry_line()
+    vector<float> tmp_qry_line;
+    tmp_qry_line.resize(h_gene_idx.size(), 0);
+    cudaMemcpy(tmp_qry_line.data(), d_qry_line, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
+    cout<<tmp_qry_line.size()<<endl;
+    for (int i = 0; i < tmp_qry_line.size(); ++i)
+        cout<<tmp_qry_line[i]<<" ";
+    cout<<endl;
 
     // rank for qry line
     rankdata<<< 1, 1 >>>(d_qry_line, h_gene_idx.size());
@@ -259,7 +269,9 @@ bool finetune()
     // process each cell
     for (int i = 0; i < qry_height; ++i)
     {
-        finetune_round(d_qry+i*qry_width, NULL, i);
+        //finetune_round(d_qry+i*qry_width, NULL, i);
+        cout<<"p_qry:"<< pitchqry<<"qry_width:"<<qry_width<<endl;
+        finetune_round(d_qry+i*pitchqry, NULL, i);
         break;
     }
  
