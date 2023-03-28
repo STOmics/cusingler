@@ -141,7 +141,25 @@ __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
 
 __global__ void rankdata(float* qry, const uint32 len)
 {
-    // TODO
+    int tidx=threadIdx.x;
+    
+    int r = 1, s = 1;
+
+    if(tidx<len)
+    {
+        for (int i=0;i<len;i++)
+        {
+            if(i!=tidx)     //i!=j
+            {
+            if(qry[i]<qry[tidx])
+                r+=qry[i];
+            if(qry[i]==qry[tidx])
+                s+=qry[i] ;   
+            }
+        }
+        qry[tidx]=r+(s-1)*0.5;
+    }
+
 }
 
 __global__ void spearman(float* qry, float* ref, const uint32 gene_num, const uint32 cell_num, float* score)
@@ -207,6 +225,14 @@ bool finetune_round(float* qry, float* labels, int line_num)
 
     // rank for qry line
     rankdata<<< 1, 1 >>>(d_qry_line, h_gene_idx.size());
+    //check result of rankdata()
+    cudaMemcpy(tmp_qry_line.data(), d_qry_line, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
+    cout<<"rankresult:"<<endl;
+    cout<<tmp_qry_line.size()<<endl;
+    for (int i = 0; i < tmp_qry_line.size(); ++i)
+        cout<<tmp_qry_line[i]<<" ";
+    cout<<endl;
+
 
     // get filtered cells of ref data
     float* d_ref_lines;
