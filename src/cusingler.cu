@@ -23,18 +23,26 @@ vector<uint32> h_ctdiff, h_ctdidx;
 size_t pitchref;
 size_t pitchqry;
 // unit is MB
+#define CHECK(call)                                                       \
+{                                                                         \
+   const cudaError_t error = call;                                        \
+   if (error != cudaSuccess)                                              \
+   {                                                                      \
+      printf("Error: %s:%d, ", __FILE__, __LINE__);                       \
+      printf("code:%d, reason: %s\n", error, cudaGetErrorString(error));  \
+      exit(1);                                                            \
+   }                                                                      \
+}
+
 uint32 getUsedMem()
 {
     size_t free, total;
     cudaMemGetInfo(&free, &total);
     return (total-free)/1024/1024;
 }
-bool err_check()
-{
-    if(errcode!=cudaSuccess)
-        std::cout << "cudaerrcode:"<<errcode<<" line = %d" << __LINE__<<endl;
-    return true;
-}
+
+
+
 bool init()
 {
     stream =NULL;
@@ -81,9 +89,9 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     // cout<<"qry max value: "<<max_val<<endl;
     //
 
-    cudaError_t cudaerr;
-    cudaerr=cudaMallocPitch((void**)&d_ref,&pitchref,ref_width*sizeof(float),ref_height);
-    cudaMallocPitch((void**)&d_qry,&pitchqry,qry_width*sizeof(float),qry_height);
+    
+    CHECK(cudaMallocPitch((void**)&d_ref,&pitchref,ref_width*sizeof(float),ref_height));
+    CHECK(cudaMallocPitch((void**)&d_qry,&pitchqry,qry_width*sizeof(float),qry_height));
     
     std::cout<<"pitchref: "<<pitchref<<std::endl;
     std::cout<<"pitchqry: "<<pitchqry<<std::endl;
@@ -128,19 +136,21 @@ __global__ void get_device_qry_line(uint32* gene_idx, float* qry, const uint32 l
 }
 
 __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
-    uint32* cell_idx, const uint32 cell_len, float* ref, const uint32 ref_width, 
+    uint32* cell_idx, const uint32 cell_len, float* ref, const uint32 pitch,const uint32 ref_width, 
     float* res)
 {
     int nx = blockIdx.x * blockDim.x + threadIdx.x;
     int ny = blockIdx.y * blockDim.y + threadIdx.y;
     if (nx < cell_len && ny < gene_len)
     {
-        res[nx * gene_len + ny] = ref[cell_idx[nx] * ref_width + ref_width - gene_idx[ny] - 1 ];
+        res[nx * gene_len + ny] = ref[cell_idx[nx] * pitch + ref_width - gene_idx[ny] - 1 ];
     }
 }
 
 __global__ void rankdata(float* qry,float* d_rankout, const uint32 len)
 {
+    //int nx = blockIdx.x * blockDim.x + threadIdx.x;
+    //int ny = blockIdx.y * blockDim.y + threadIdx.y;
     int tidx=threadIdx.x;
     
     int r = 1, s = 0;
@@ -225,7 +235,9 @@ bool finetune_round(float* qry, float* labels, int line_num)
     float * d_rank;
     cudaMalloc((void**)&d_rank,h_gene_idx.size()*sizeof(float));
     // rank for qry line
-    rankdata<<< 1, 1 >>>(d_qry_line,d_rank, h_gene_idx.size());
+    dim3 blockDim(1024);
+    dim3 gridDim((h_gene_idx.size()-1)/1024+1);
+    rankdata<<< gridDim, blockDim >>>(d_qry_line,d_rank, h_gene_idx.size());
     //check result of rankdata()
     cudaMemcpy(tmp_qry_line.data(), d_rank, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
     cout<<"rankresult:"<<endl;
@@ -246,10 +258,13 @@ bool finetune_round(float* qry, float* labels, int line_num)
         uint32 len = h_ctidx[label * 2 + 1];
         
         dim3 blockDim(32, 32);
-        dim3 gridDim(len/32+1, h_gene_idx.size()/32+1);
+        dim3 gridDim((len-1)/32+1, (h_gene_idx.size()-1)/32+1);
         get_device_ref_lines<<< gridDim, blockDim >>>
-            (d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, ref_width, d_ref_lines);
-
+            (d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, pitchref,ref_width, d_ref_lines);
+        /*
+          ********d_ref is pitched mem***********
+          data[i][j]=d_ref+i*pitch_len+j
+        */
         // check result of get_device_ref_lines()
         // vector<float> tmp_ref_line;
         // tmp_ref_line.resize(h_gene_idx.size()*len, 0);
@@ -267,7 +282,7 @@ bool finetune_round(float* qry, float* labels, int line_num)
         // rank for ref lines
         for (int i = 0; i < len; ++i)
         {
-            rankdata<<< 1, 1 >>>(d_ref_lines+i*h_gene_idx.size(), h_gene_idx.size());
+           // rankdata<<< 1, 1 >>>(d_ref_lines+i*h_gene_idx.size(), h_gene_idx.size());
             break;
         }
 
