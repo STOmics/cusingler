@@ -112,7 +112,9 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     // cudaMemcpyAsync(d_qry, rawdata.test.data(), qry_height * qry_width * sizeof(float), cudaMemcpyHostToDevice,stream);
     // // cudaMemcpy(d_labels, rawdata.labels.data(), qry_height * ct_num * sizeof(float), cudaMemcpyHostToDevice);
     h_labels = rawdata.labels;
-    cudaMemcpyAsync(d_ctids, ctids.data(), ctids.size() * sizeof(uint32), cudaMemcpyHostToDevice,stream);
+    //CHECK( cudaMemcpyAsync(d_ctids, ctids.data(), ctids.size() * sizeof(uint32), cudaMemcpyHostToDevice,stream));
+    CHECK( cudaMemcpy(d_ctids, ctids.data(), ctids.size() * sizeof(uint32), cudaMemcpyHostToDevice));
+   
     // cudaMemcpy(d_ctidx, ctidx.data(), ctidx.size() * sizeof(uint32), cudaMemcpyHostToDevice);
     h_ctidx = ctidx;
     // cudaMemcpy(d_ctdiff, ctdiff.data(), ctdiff.size() * sizeof(uint32), cudaMemcpyHostToDevice);
@@ -143,7 +145,7 @@ __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
     int ny = blockIdx.y * blockDim.y + threadIdx.y;
     if (nx < cell_len && ny < gene_len)
     {
-        res[nx * gene_len + ny] = ref[cell_idx[nx] * pitch + ref_width - gene_idx[ny] - 1 ];
+        res[nx * gene_len + ny] = ref[cell_idx[nx] * (pitch/sizeof(float)) + ref_width - gene_idx[ny] - 1 ];
     }
 }
 
@@ -227,19 +229,19 @@ bool finetune_round(float* qry, float* labels, int line_num)
     //check result of get_device_qry_line()
     vector<float> tmp_qry_line;
     tmp_qry_line.resize(h_gene_idx.size(), 0);
-    cudaMemcpy(tmp_qry_line.data(), d_qry_line, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
+    CHECK(cudaMemcpy(tmp_qry_line.data(), d_qry_line, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost));
     cout<<tmp_qry_line.size()<<endl;
     for (int i = 0; i < tmp_qry_line.size(); ++i)
         cout<<tmp_qry_line[i]<<" ";
     cout<<endl;
     float * d_rank;
-    cudaMalloc((void**)&d_rank,h_gene_idx.size()*sizeof(float));
+    CHECK(cudaMalloc((void**)&d_rank,h_gene_idx.size()*sizeof(float)));
     // rank for qry line
     dim3 blockDim(1024);
     dim3 gridDim((h_gene_idx.size()-1)/1024+1);
     rankdata<<< gridDim, blockDim >>>(d_qry_line,d_rank, h_gene_idx.size());
     //check result of rankdata()
-    cudaMemcpy(tmp_qry_line.data(), d_rank, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
+    CHECK(cudaMemcpy(tmp_qry_line.data(), d_rank, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost));
     cout<<"rankresult:"<<endl;
     cout<<tmp_qry_line.size()<<endl;
     for (int i = 0; i < tmp_qry_line.size(); ++i)
@@ -249,35 +251,40 @@ bool finetune_round(float* qry, float* labels, int line_num)
 
     // get filtered cells of ref data
     float* d_ref_lines;
-    cudaMalloc((void**)&d_ref_lines, 1000000 * sizeof(float));
-    cudaMemset(d_ref_lines, 0, 1000000 * sizeof(float));
+    CHECK(cudaMalloc((void**)&d_ref_lines, 1000000 * sizeof(float)));
+    CHECK(cudaMemset(d_ref_lines, 0, 1000000 * sizeof(float)));
+  
 
     for (auto& label : top_labels)
     {
+      
+ 
         uint32 pos = h_ctidx[label * 2];
         uint32 len = h_ctidx[label * 2 + 1];
         
-        dim3 blockDim(32, 32);
-        dim3 gridDim((len-1)/32+1, (h_gene_idx.size()-1)/32+1);
-        get_device_ref_lines<<< gridDim, blockDim >>>
+        dim3 blockDim1(32, 32);
+        dim3 gridDim1((len-1)/32+1, (h_gene_idx.size()-1)/32+1);
+        get_device_ref_lines<<< gridDim1, blockDim1 >>>
             (d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, pitchref,ref_width, d_ref_lines);
         /*
           ********d_ref is pitched mem***********
-          data[i][j]=d_ref+i*pitch_len+j
+          data[i][j]=d_ref+i*pitch/sizeof(datatype)+j
         */
-        // check result of get_device_ref_lines()
-        // vector<float> tmp_ref_line;
-        // tmp_ref_line.resize(h_gene_idx.size()*len, 0);
-        // cout<<"cell len: "<<len<<endl;
-        // cudaMemcpy(tmp_ref_line.data(), d_ref_lines, h_gene_idx.size()*len*sizeof(float), cudaMemcpyDeviceToHost);
-        // cout<<tmp_ref_line.size()<<endl;
-        // float max_val = 0, total_val = 0;
-        // for (int i = 0; i < tmp_ref_line.size(); ++i)
-        // {
-        //     max_val = max(max_val, tmp_ref_line[i]);
-        //     total_val += tmp_ref_line[i];
-        // }
-        // cout<<max_val<<" "<<total_val<<endl;
+        //check result of get_device_ref_lines()
+        vector<float> tmp_ref_line;
+        tmp_ref_line.resize(h_gene_idx.size()*len, 0);
+        CHECK( cudaMemcpy(tmp_ref_line.data(), d_ref_lines, h_gene_idx.size()*len*sizeof(float), cudaMemcpyDeviceToHost));
+      
+        cout<<"h_gene_idx len: "<<h_gene_idx.size()<<endl;
+        CHECK( cudaMemcpy(tmp_ref_line.data(), d_ref_lines, h_gene_idx.size()*len*sizeof(float), cudaMemcpyDeviceToHost));
+        cout<<tmp_ref_line.size()<<endl;
+        float max_val = 0, total_val = 0;
+        for (int i = 0; i < tmp_ref_line.size(); ++i)
+        {
+            max_val = max(max_val, tmp_ref_line[i]);
+            total_val += tmp_ref_line[i];
+        }
+        cout<<max_val<<" "<<total_val<<endl;
 
         // rank for ref lines
         for (int i = 0; i < len; ++i)
@@ -311,7 +318,7 @@ bool finetune()
     {
         //finetune_round(d_qry+i*qry_width, NULL, i);
         cout<<"p_qry:"<< pitchqry<<"qry_width:"<<qry_width<<endl;
-        finetune_round(d_qry+i*pitchqry, NULL, i);
+        finetune_round(d_qry+i*pitchqry/sizeof(float), NULL, i);
         break;
     }
  
