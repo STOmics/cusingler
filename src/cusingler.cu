@@ -33,7 +33,7 @@ bool err_check()
 {
     if(errcode!=cudaSuccess)
         std::cout << "cudaerrcode:"<<errcode<<" line = %d" << __LINE__<<endl;
-     return true;
+    return true;
 }
 bool init()
 {
@@ -139,11 +139,11 @@ __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
     }
 }
 
-__global__ void rankdata(float* qry, const uint32 len)
+__global__ void rankdata(float* qry,float* d_rankout, const uint32 len)
 {
     int tidx=threadIdx.x;
     
-    int r = 1, s = 1;
+    int r = 1, s = 0;
 
     if(tidx<len)
     {
@@ -157,7 +157,7 @@ __global__ void rankdata(float* qry, const uint32 len)
                 s+=qry[i] ;   
             }
         }
-        qry[tidx]=r+(s-1)*0.5;
+        d_rankout[tidx]=r+s*0.5;
     }
 
 }
@@ -222,11 +222,12 @@ bool finetune_round(float* qry, float* labels, int line_num)
     for (int i = 0; i < tmp_qry_line.size(); ++i)
         cout<<tmp_qry_line[i]<<" ";
     cout<<endl;
-
+    float * d_rank;
+    cudaMalloc((void**)&d_rank,h_gene_idx.size()*sizeof(float));
     // rank for qry line
-    rankdata<<< 1, 1 >>>(d_qry_line, h_gene_idx.size());
+    rankdata<<< 1, 1 >>>(d_qry_line,d_rank, h_gene_idx.size());
     //check result of rankdata()
-    cudaMemcpy(tmp_qry_line.data(), d_qry_line, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(tmp_qry_line.data(), d_rank, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
     cout<<"rankresult:"<<endl;
     cout<<tmp_qry_line.size()<<endl;
     for (int i = 0; i < tmp_qry_line.size(); ++i)
