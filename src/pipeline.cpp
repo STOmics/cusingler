@@ -92,7 +92,15 @@ bool Pipeline::work()
 
     copyin(rawdata, ctids, ctidx, ctdiff, ctdidx);
 
-    finetune();
+    auto res = finetune();
+    unordered_map<uint32, uint32> m;
+    for (size_t i = 0; i < res.size(); ++i)
+    {
+        cout<<"cell idx: "<<i<<" celltype: "<<rawdata.celltypes[res[i]]<<endl;
+        m[res[i]]++;
+    }
+    // for (auto& [k,v] : m)
+    //     cout<<k<<" "<<v<<endl;
 
     destroy();
 

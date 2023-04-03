@@ -8,7 +8,9 @@
 
 #include "types.h"
 
+#include <vector>
+
 bool init();
 bool destroy();
 bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, vector<uint32>& ctdiff, vector<uint32>& ctdidx);
-bool finetune();
+std::vector<uint32> finetune();
