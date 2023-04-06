@@ -17,6 +17,7 @@ class Pipeline
 public:
     Pipeline(string filename);
     ~Pipeline() {};
+    bool scale(vector<float>& src, const uint32 rows, const uint32 cols, vector<uint16>& dest);
     bool preprocess();
     bool work();
 
@@ -29,4 +30,7 @@ private:
     vector<uint32> ctdidx;
 
     int label_num;
+
+    vector<uint16> ref;
+    vector<uint16> qry;
 };

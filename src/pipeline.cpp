@@ -6,10 +6,59 @@
 
 #include "pipeline.h"
 #include "io.h"
+#include "timer.h"
 #include "cusingler.cuh"
 
 #include <iostream>
+#include <thread>
+#include <set>
+#include <cassert>
 using namespace std;
+
+bool Pipeline::scale(vector<float>& src, const uint32 rows, const uint32 cols, vector<uint16>& dest)
+{
+    dest.resize(src.size(), 0);
+
+    auto task = [&](size_t start, size_t rows, size_t cols){
+        for (size_t i = 0; i < rows; ++i)
+        {
+            set<float> uniq;
+            for (size_t j = 0; j < cols; ++j)
+                uniq.insert(src[start+i*cols+j]);
+            assert(uniq.size() < 65536);
+
+            vector<float> order(uniq.begin(), uniq.end());
+            unordered_map<float, uint16> index;
+            for (uint16 j = 0; j < order.size(); ++j)
+            {
+                index[order[j]] = j;
+            }
+            for (size_t j = 0; j < cols; ++j)
+                dest[start+i*cols+j] = index[src[start+i*cols+j]];
+        }
+    };
+    constexpr int thread_num = 20;
+    vector<thread> threads;
+    size_t start = 0;
+    size_t step = rows / thread_num;
+    if (rows % thread_num != 0)
+        step++;
+    for (int i = 0; i < thread_num; ++i)
+    {
+        start = i*step*cols;
+        if (i == (thread_num-1))
+            step = rows - i * step;
+        thread th(task, start, step, cols);
+        // cout<<start<<" "<<step<<" "<<cols<<endl;
+        threads.push_back(std::move(th));
+    }
+    for (auto& th : threads)
+    {
+        th.join();
+    }
+
+    return true;
+}
 
 Pipeline::Pipeline(string filename)
 {
@@ -81,6 +130,23 @@ bool Pipeline::preprocess()
     // for (size_t i = 0; i < ctdidx.size()/2; ++i)
     //     cout<<"celltype's diff cells start: "<<ctdidx[i*2]<<" len: "<<ctdidx[i*2+1]<<endl;
         
+    // unordered_map<float, size_t> bincount;
+    // for (auto& f : rawdata.test)
+    //     bincount[f]++;
+    // cout<<"test len: "<<rawdata.test.size()<<" uniq len: "<<bincount.size()<<endl;
+
+    Timer timer("ms");
+    scale(rawdata.ref, rawdata.ref_cell_num, rawdata.ref_gene_num, ref);
+    cout<<"scale ref cost time(ms): "<<timer.toc()<<endl;
+    vector<float>().swap(rawdata.ref);
+
+    timer.tic();
+    scale(rawdata.test, rawdata.test_cell_num, rawdata.test_gene_num, qry);
+    cout<<"scale qry cost time(ms): "<<timer.toc()<<endl;
+    vector<float>().swap(rawdata.test);
+
+    // exit(0);
+
     return true;
 }
 
@@ -90,17 +156,20 @@ bool Pipeline::work()
 
     init();
 
-    copyin(rawdata, ctids, ctidx, ctdiff, ctdidx);
+    copyin(rawdata, ctids, ctidx, ctdiff, ctdidx, ref, qry);
 
+    Timer timer("ms");
     auto res = finetune();
+    cout<<"finetune cost time(ms): "<<timer.toc()<<endl;
+
     unordered_map<uint32, uint32> m;
     for (size_t i = 0; i < res.size(); ++i)
     {
-        cout<<"cell idx: "<<i<<" celltype: "<<rawdata.celltypes[res[i]]<<endl;
+        // cout<<"cell idx: "<<i<<" celltype: "<<rawdata.celltypes[res[i]]<<endl;
         m[res[i]]++;
     }
-    // for (auto& [k,v] : m)
-    //     cout<<k<<" "<<v<<endl;
+    for (auto& [k,v] : m)
+        cout<<k<<" "<<v<<endl;
 
     destroy();
 
