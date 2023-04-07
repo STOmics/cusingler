@@ -19,7 +19,9 @@ bool Pipeline::scale(vector<float>& src, const uint32 rows, const uint32 cols, v
 {
     dest.resize(src.size(), 0);
 
+    std::mutex m;
     auto task = [&](size_t start, size_t rows, size_t cols){
+        size_t max_index = 0;
         for (size_t i = 0; i < rows; ++i)
         {
             set<float> uniq;
@@ -35,7 +37,11 @@ bool Pipeline::scale(vector<float>& src, const uint32 rows, const uint32 cols, v
             }
             for (size_t j = 0; j < cols; ++j)
                 dest[start+i*cols+j] = index[src[start+i*cols+j]];
+            max_index = max(max_index, index.size());
         }
+
+        // std::lock_guard<std::mutex> lg(m);
+        // cout<<"max index: "<<max_index<<endl;
     };
     constexpr int thread_num = 20;
     vector<thread> threads;

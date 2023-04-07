@@ -134,8 +134,8 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     cudaMalloc((void**)&d_gene_idx, qry_width * sizeof(uint32));
     cudaMalloc((void**)&d_qry_line, qry_width * sizeof(uint16));
     cudaMalloc((void**)&d_qry_rank, qry_width * sizeof(float));
-    cudaMalloc((void**)&d_ref_lines, 100000000 * sizeof(uint16));
-    cudaMalloc((void**)&d_ref_rank, 100000000 * sizeof(float));
+    cudaMalloc((void**)&d_ref_lines, 1000000000 * sizeof(uint16));
+    cudaMalloc((void**)&d_ref_rank, 1000000000 * sizeof(float));
     cudaMalloc((void**)&d_score, 100000 * sizeof(float));
 
     return true;
@@ -188,13 +188,13 @@ __global__ void rankdata_bin(uint16* qry, const uint32 cols, const uint32 rows, 
         uint16* q = qry + tid*cols;
         float*  r = res + tid*cols;
         // travel for getting bin count
-        uint16 bins[1700] = {0};
+        uint16 bins[80] = {0};
         for (int i = 0; i < cols; ++i)
             bins[q[i]]++;
         // calculate real rank
-        float ranks[1700];
+        float ranks[80];
         float start = 0;
-        for (int i = 0; i < 1700; ++i)
+        for (int i = 0; i < 80; ++i)
         {
             if (bins[i] == 0) continue;
             ranks[i] = start + float(bins[i]+1)/2;
@@ -321,6 +321,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
     // cudaMemset(d_ref_rank, 0, 1000000 * sizeof(float));
 
     vector<float> scores;
+    size_t total_len = 0;
     for (auto& label : top_labels)
     {
         uint32 pos = h_ctidx[label * 2];
@@ -329,7 +330,9 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         dim3 blockDim(32, 32);
         dim3 gridDim(len/32+1, h_gene_idx.size()/32+1);
         get_device_ref_lines<<< gridDim, blockDim >>>
-            (d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, ref_width, pitchref, d_ref_lines);
+            (d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, ref_width, pitchref, d_ref_lines + total_len*h_gene_idx.size());
+        total_len += len;
+    }
 
         // check result of get_device_ref_lines()
         // if (label > 5)
@@ -352,7 +355,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         // {
         //     rankdata<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_ref_lines+i*h_gene_idx.size(), h_gene_idx.size(), d_ref_rank+i*h_gene_idx.size());
         // }
-        rankdata_bin<<< len/1024 + 1, 1024 >>>(d_ref_lines, h_gene_idx.size(), len, d_ref_rank);
+        rankdata_bin<<< total_len/1024 + 1, 1024 >>>(d_ref_lines, h_gene_idx.size(), total_len, d_ref_rank);
         // cout<<"rows x cols: "<<len<<" x "<<h_gene_idx.size()<<endl;
 
         // vector<float> tmp_ref_line;
@@ -368,11 +371,11 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
 
         // spearman
         // cudaMemset(d_score, 0, 1000 * sizeof(float));
-        spearman<<< len/1024 + 1, 1024 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), len, d_score);
+        spearman<<< total_len/1024 + 1, 1024 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
 
         vector<float> h_score;
-        h_score.resize(len, 0);
-        cudaMemcpy(h_score.data(), d_score, len*sizeof(float), cudaMemcpyDeviceToHost);
+        h_score.resize(total_len, 0);
+        cudaMemcpy(h_score.data(), d_score, total_len*sizeof(float), cudaMemcpyDeviceToHost);
         // cout<<"score len: "<<len<<endl;
         // if (scores.size() == 1)
         // {
@@ -385,10 +388,18 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         //         cout<<h_score[i]<<" ";
         //     cout<<endl;
         // }
-        float score = percentile(h_score, len, 0.8);
+    uint32 start = 0;
+    total_len = 0;
+    for (auto& label : top_labels)
+    {
+        uint32 len = h_ctidx[label * 2 + 1];
+        total_len += len;
+        
+        vector<float> tmp(h_score.begin()+start, h_score.begin()+total_len);
+        float score = percentile(tmp, len, 0.8);
         // cout<<label<<" score: "<<score<<endl;
         scores.push_back(score);
-        
+        start += len;
         // cudaMemset(d_ref_lines, 0, h_gene_idx.size() * len * sizeof(float));
     }
 
@@ -412,7 +423,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
 
 vector<uint32> finetune()
 {
-    Timer timer;
+    Timer timer("ms");
     // process each cell
     vector<uint32> res;
     // for (int i = 0; i < 1; ++i)
@@ -440,7 +451,7 @@ vector<uint32> finetune()
         {
             auto now = std::chrono::system_clock::now();
             std::time_t curr_time = std::chrono::system_clock::to_time_t(now);
-            cout<<"processed "<<i<<" cells cost time(s): "<<timer.toc()<<endl;
+            cout<<"processed "<<i<<" cells cost time(ms): "<<timer.toc()<<endl;
         }
     }
  
