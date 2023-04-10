@@ -191,15 +191,17 @@ __global__ void rankdata_bin(uint16* qry, const uint32 cols, const uint32 rows, 
         uint16 bins[80] = {0};
         for (int i = 0; i < cols; ++i)
             bins[q[i]]++;
+
         // calculate real rank
         float ranks[80];
         float start = 0;
         for (int i = 0; i < 80; ++i)
         {
-            if (bins[i] == 0) continue;
-            ranks[i] = start + float(bins[i]+1)/2;
+            // if (bins[i] == 0) continue;
+            ranks[i] = start + (bins[i]+1)*0.5;
             start += bins[i];
         }
+
         // assign rank value
         for (int i = 0; i < cols; ++i)
             r[i] = ranks[q[i]];
@@ -355,7 +357,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         // {
         //     rankdata<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_ref_lines+i*h_gene_idx.size(), h_gene_idx.size(), d_ref_rank+i*h_gene_idx.size());
         // }
-        rankdata_bin<<< total_len/1024 + 1, 1024 >>>(d_ref_lines, h_gene_idx.size(), total_len, d_ref_rank);
+        rankdata_bin<<< total_len/256 + 1, 256 >>>(d_ref_lines, h_gene_idx.size(), total_len, d_ref_rank);
         // cout<<"rows x cols: "<<len<<" x "<<h_gene_idx.size()<<endl;
 
         // vector<float> tmp_ref_line;
