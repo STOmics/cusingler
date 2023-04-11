@@ -180,6 +180,7 @@ __global__ void rankdata(uint16* qry, const uint32 len, float* res)
     }
 }
 
+// basic rankdata method using bincount
 __global__ void rankdata_bin(uint16* qry, const uint32 cols, const uint32 rows, float* res)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -205,6 +206,92 @@ __global__ void rankdata_bin(uint16* qry, const uint32 cols, const uint32 rows, 
         // assign rank value
         for (int i = 0; i < cols; ++i)
             r[i] = ranks[q[i]];
+    }
+}
+
+// using shared memory
+__global__ void rankdata_bin2(uint16* qry, const uint32 cols, const uint32 rows, float* res)
+{
+    __shared__ uint16 bins[80*64];
+    __shared__ float ranks[80*64];
+    int bid = threadIdx.x;
+
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < rows)
+    {
+        for (int i = 0; i < 80; ++i)
+        {
+            bins[bid*80+i] = 0;
+        }
+
+        uint16* q = qry + tid*cols;
+        float*  r = res + tid*cols;
+        // travel for getting bin count
+        for (int i = 0; i < cols; ++i)
+            bins[bid*80+q[i]]++;
+
+        // calculate real rank
+        float start = 0;
+        for (int i = 0; i < 80; ++i)
+        {
+            // if (bins[i] == 0) continue;
+            ranks[bid*80+i] = start + (bins[bid*80+i]+1)*0.5;
+            start += bins[bid*80+i];
+        }
+
+        // assign rank value
+        for (int i = 0; i < cols; ++i)
+            r[i] = ranks[bid*80+q[i]];
+    }
+}
+
+// one block threads for each cell
+__global__ void rankdata_bin3(uint16* qry, const uint32 cols, const uint32 rows, float* res)
+{
+    __shared__ int bins[128];
+    __shared__ float ranks[128];
+    int bid = blockIdx.x;
+    int tid = threadIdx.x;
+
+    int step = cols / 64;
+    if (cols % 64 != 0)
+        step++;
+
+    if (bid < rows)
+    {
+        bins[tid*2] = 0;
+        bins[tid*2+1] = 0;
+        __syncthreads();
+
+        uint16* q = qry + bid*cols;
+        float*  r = res + bid*cols;
+        // travel for getting bin count
+        for (int i = tid*step; i < (tid+1)*step; ++i)
+        {
+            if (i < cols)
+                atomicAdd(&bins[q[i]], 1);
+        }
+        __syncthreads();
+
+        // calculate real rank
+        if (tid == 0)
+        {
+            int start = 0;
+            for (int i = 0; i < 128; ++i)
+            {
+                // if (bins[i] == 0) continue;
+                ranks[i] = start + (bins[i]+1)*0.5;
+                start += bins[i];
+            }
+        }
+        __syncthreads();
+
+        // assign rank value
+        for (int i = tid*step; i < (tid+1)*step; ++i)
+        {
+            if (i < cols)
+                r[i] = ranks[q[i]];
+        }
     }
 }
 
@@ -357,7 +444,14 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         // {
         //     rankdata<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_ref_lines+i*h_gene_idx.size(), h_gene_idx.size(), d_ref_rank+i*h_gene_idx.size());
         // }
-        rankdata_bin<<< total_len/256 + 1, 256 >>>(d_ref_lines, h_gene_idx.size(), total_len, d_ref_rank);
+        // rankdata_bin<<< total_len/256 + 1, 256 >>>(d_ref_lines, h_gene_idx.size(), total_len, d_ref_rank);
+        // rankdata_bin2<<< total_len/64 + 1, 64>>>(d_ref_lines, h_gene_idx.size(), total_len, d_ref_rank);
+        rankdata_bin3<<< total_len, 64>>>(d_ref_lines, h_gene_idx.size(), total_len, d_ref_rank);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess )
+        {
+            printf("CUDA Error: %s\n", cudaGetErrorString(err));
+        }
         // cout<<"rows x cols: "<<len<<" x "<<h_gene_idx.size()<<endl;
 
         // vector<float> tmp_ref_line;
