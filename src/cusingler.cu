@@ -350,6 +350,58 @@ __global__ void spearman(float* qry, float* ref, const uint32 gene_num, const ui
     }
 }
 
+__global__ void spearman_reduce(float* qry, float* ref, const uint32 gene_num, const uint32 cell_num, float* score)
+{
+    int bid = blockIdx.x;
+    int tid = threadIdx.x;
+
+    float mean = (gene_num+1)/2.0;
+    int step = gene_num / 128;
+    if (gene_num % 128 != 0)
+        step++;
+
+    __shared__ float sumxy[128];
+    __shared__ float sumxx[128];
+    __shared__ float sumyy[128];
+
+    sumxy[tid] = 0;
+    sumxx[tid] = 0;
+    sumyy[tid] = 0;
+    
+    for (int i = tid*step; i < (tid+1)*step; ++i)
+    {
+        if (i < gene_num)
+        {
+            float x = qry[i] - mean;
+            float y = ref[bid * gene_num + i] - mean;
+            sumxy[tid] += x * y;
+            sumxx[tid] += x * x;
+            sumyy[tid] += y * y;
+        }
+    }
+    __syncthreads();
+    
+    for (int stride = 1; stride < 128; stride *= 2)
+    {
+        if ((tid % (2 * stride)) == 0)
+        {
+            sumxy[tid] += sumxy[tid + stride];
+            sumxx[tid] += sumxx[tid + stride];
+            sumyy[tid] += sumyy[tid + stride];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0)
+    {
+        float divisor = sqrt(sumxx[0] * sumyy[0]);
+        if (divisor != 0)
+            score[bid] = sumxy[0] / divisor;
+        else
+            score[bid] = CUDART_NAN_F;
+    }
+}
+
 float percentile(vector<float> arr, int len, float p)
 {
     if (len <= 1) return arr.front();
@@ -531,7 +583,10 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
 
         // spearman
         // cudaMemset(d_score, 0, 1000 * sizeof(float));
-        spearman<<< total_len/1024 + 1, 1024 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
+        // spearman<<< total_len/128 + 1, 128 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
+        // dim3 blockDim(16, 16);
+        // dim3 gridDim(h_cell_idx.size(), h_gene_idx.size()/512+1);
+        spearman_reduce<<< total_len, 128 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
 
         vector<float> h_score;
         h_score.resize(total_len, 0);
