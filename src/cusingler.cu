@@ -11,6 +11,7 @@
 #include <iostream>
 #include <set>
 #include <algorithm>
+#include <numeric>
 
 #include "cuda_runtime.h"
 #include "math_constants.h"
@@ -27,7 +28,7 @@ vector<uint32> h_ctdiff, h_ctdidx;
 size_t pitchref;
 size_t pitchqry;
 
-uint32* d_gene_idx;
+uint32* d_gene_idx, *d_cell_idx;
 uint16 *d_ref_lines, *d_qry_line;
 float *d_ref_rank, *d_qry_rank;
 float *d_score;
@@ -70,6 +71,7 @@ bool destroy()
     // cudaFree(d_ctdidx);
 
     cudaFree(d_gene_idx);
+    cudaFree(d_cell_idx);
     cudaFree(d_qry_line);
     cudaFree(d_qry_rank);
     cudaFree(d_ref_lines);
@@ -132,10 +134,11 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     
 
     cudaMalloc((void**)&d_gene_idx, qry_width * sizeof(uint32));
+    cudaMalloc((void**)&d_cell_idx, ref_height * sizeof(uint32));
     cudaMalloc((void**)&d_qry_line, qry_width * sizeof(uint16));
     cudaMalloc((void**)&d_qry_rank, qry_width * sizeof(float));
-    cudaMalloc((void**)&d_ref_lines, 1000000000 * sizeof(uint16));
-    cudaMalloc((void**)&d_ref_rank, 1000000000 * sizeof(float));
+    cudaMalloc((void**)&d_ref_lines, 200000000 * sizeof(uint16));
+    cudaMalloc((void**)&d_ref_rank, 200000000 * sizeof(float));
     cudaMalloc((void**)&d_score, 100000 * sizeof(float));
 
     std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
@@ -152,18 +155,45 @@ __global__ void get_device_qry_line(uint32* gene_idx, uint16* qry, const uint32 
     }
 }
 
-__global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
-    uint32* cell_idx, const uint32 cell_len, uint16* ref, const uint32 ref_width, 
-    const uint32 ref_pitch, uint16* res)
+// __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
+//     uint32* cell_idx, const uint32 cell_len, uint16* ref, const uint32 ref_width, 
+//     const uint32 ref_pitch, uint16* res)
+// {
+//     int nx = blockIdx.x * blockDim.x + threadIdx.x;
+//     int ny = blockIdx.y * blockDim.y + threadIdx.y;
+//     if (nx < cell_len && ny < gene_len)
+//     {
+//         uint16* row_head = (uint16*)((char*)ref + (uint64)(cell_idx[nx]) * ref_pitch);
+//         res[nx * gene_len + ny] = row_head[ref_width - gene_idx[ny] - 1];
+//     }
+// }
+
+// __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
+//     const uint32 cell_start, const uint32 cell_len, uint16* ref, const uint32 ref_width, 
+//     const uint32 ref_pitch, uint16* res)
+// {
+//     int nx = blockIdx.x * blockDim.x + threadIdx.x;
+//     int ny = blockIdx.y * blockDim.y + threadIdx.y;
+//     if (nx < cell_len && ny < gene_len)
+//     {
+//         uint16* row_head = (uint16*)((char*)ref + (uint64)(cell_start+nx) * ref_pitch);
+//         res[nx * gene_len + ny] = row_head[ref_width - gene_idx[ny] - 1];
+//     }
+// }
+
+__global__ void get_device_ref_lines(const uint32* gene_idx, const uint32 gene_len,
+    const uint32* cell_idx, const uint32 cell_len, uint16* ref, const uint32 ref_width, 
+    const uint64 ref_pitch, uint16* res)
 {
     int nx = blockIdx.x * blockDim.x + threadIdx.x;
     int ny = blockIdx.y * blockDim.y + threadIdx.y;
-    if (nx < cell_len && ny < gene_len)
+    if (ny < gene_len)
     {
-        uint16* row_head = (uint16*)((char*)ref + (uint64)(cell_idx[nx]) * ref_pitch);
+        uint16* row_head = (uint16*)((char*)ref + cell_idx[nx] * ref_pitch);
         res[nx * gene_len + ny] = row_head[ref_width - gene_idx[ny] - 1];
     }
 }
+
 
 __global__ void rankdata(uint16* qry, const uint32 len, float* res)
 {
@@ -414,18 +444,47 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
     // cudaMemset(d_ref_lines, 0, 1000000 * sizeof(float));
     // cudaMemset(d_ref_rank, 0, 1000000 * sizeof(float));
 
-    vector<float> scores;
+    vector<pair<size_t, size_t>> temp;
     size_t total_len = 0;
     for (auto& label : top_labels)
     {
         uint32 pos = h_ctidx[label * 2];
         uint32 len = h_ctidx[label * 2 + 1];
-        
-        dim3 blockDim(32, 32);
-        dim3 gridDim(len/32+1, h_gene_idx.size()/32+1);
-        get_device_ref_lines<<< gridDim, blockDim >>>
-            (d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, ref_width, pitchref, d_ref_lines + total_len*h_gene_idx.size());
+        // cout<<label<<" "<<pos<<" "<<len<<endl;
+        if (temp.empty() || (temp.back().first + temp.back().second) != pos)
+        {
+            temp.push_back({pos,len});
+            total_len += len;
+        }
+        else
+        {
+            temp.back().second += len;
+            total_len += len;
+        }
+    }
+    vector<uint32> h_cell_idx(total_len);
+    total_len = 0;
+    for (auto& [pos, len] : temp)
+    {
+        std::iota(h_cell_idx.begin()+total_len, h_cell_idx.begin()+total_len+len, pos);
+        // cout<<total_len<<" "<<total_len+len<<" "<<pos<<endl;
         total_len += len;
+    }
+    cudaMemcpy(d_cell_idx, h_cell_idx.data(), h_cell_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice);
+    // for (auto& [pos, len] : temp)
+    {
+        dim3 blockDim(1, 512);
+        dim3 gridDim(h_cell_idx.size(), h_gene_idx.size()/512+1);
+        get_device_ref_lines<<< gridDim, blockDim >>>
+            (d_gene_idx, h_gene_idx.size(), d_cell_idx, h_cell_idx.size(), d_ref, ref_width, (uint64)pitchref, d_ref_lines);
+
+        
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess )
+        {
+            printf("get_device_ref_lines CUDA Error: %s\n", cudaGetErrorString(err));
+        }
+        // total_len += len;
     }
 
         // check result of get_device_ref_lines()
@@ -455,7 +514,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess )
         {
-            printf("CUDA Error: %s\n", cudaGetErrorString(err));
+            printf("rankdata_bin3 CUDA Error: %s\n", cudaGetErrorString(err));
         }
         // cout<<"rows x cols: "<<len<<" x "<<h_gene_idx.size()<<endl;
 
@@ -491,6 +550,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         // }
     uint32 start = 0;
     total_len = 0;
+    vector<float> scores;
     for (auto& label : top_labels)
     {
         uint32 len = h_ctidx[label * 2 + 1];

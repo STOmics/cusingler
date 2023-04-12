@@ -191,6 +191,42 @@ void Pipeline::filter()
     // cout<<endl;
 }
 
+void Pipeline::resort()
+{
+    vector<uint16> dest;
+    dest.resize(ref.size(), 0);
+
+    auto task = [&](size_t start){
+        for (size_t i = start; i < label_num; i+=20)
+        {
+            size_t pos = ctidx[i*2];
+            size_t len = ctidx[i*2+1];
+            size_t idx = pos * rawdata.ref_gene_num;
+            for (size_t j = pos; j < pos+len; ++j)
+            {
+                for (size_t k = 0; k < rawdata.ref_gene_num; ++k)
+                    dest[idx++] = ref[ctids[j]*rawdata.ref_gene_num+k];
+            }
+        }
+    };
+    constexpr int thread_num = 20;
+    vector<thread> threads;
+    for (int i = 0; i < thread_num; ++i)
+    {
+        thread th(task, i);
+        threads.push_back(std::move(th));
+    }
+    for (auto& th : threads)
+    {
+        th.join();
+    }
+
+    dest.swap(ref);
+    for (uint32 i = 0; i < ctids.size(); ++i)
+        ctids[i] = i;
+
+}
+
 Pipeline::Pipeline(string filename)
 {
     cout<<"start loading data."<<endl;
@@ -229,6 +265,7 @@ bool Pipeline::preprocess()
         ctidx.push_back(vec.size());
         start += vec.size();
         ctids.insert(ctids.end(), vec.begin(), vec.end());
+        // cout<<start-vec.size()<<" "<<vec.size()<<" "<<ctids.size()<<endl;
     }
     // for (size_t i = 0; i < ctidx.size()/2; ++i)
     //     cout<<"celltype's cells start: "<<ctidx[i*2]<<" len: "<<ctidx[i*2+1]<<endl;
@@ -283,6 +320,10 @@ bool Pipeline::preprocess()
     cout<<"new qry size: "<< rawdata.test_cell_num << " x "<<rawdata.test_gene_num<<endl;
     cout<<"new ref size: "<< rawdata.ref_cell_num << " x "<<rawdata.ref_gene_num<<endl;
 
+    // re-sort ref data groupby celltype
+    resort();
+    cout<<"re-sort ref by celltype cost time(ms): "<<timer.toc()<<endl;
+
     // exit(0);
 
     return true;
@@ -306,8 +347,8 @@ bool Pipeline::work()
         // cout<<"cell idx: "<<i<<" celltype: "<<rawdata.celltypes[res[i]]<<endl;
         m[res[i]]++;
     }
-    for (auto& [k,v] : m)
-        cout<<k<<" "<<v<<endl;
+    // for (auto& [k,v] : m)
+    //     cout<<k<<" "<<v<<endl;
 
     destroy();
 
