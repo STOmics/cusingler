@@ -10,6 +10,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 using namespace std;
 
 class Pipeline
@@ -17,9 +18,13 @@ class Pipeline
 public:
     Pipeline(string filename);
     ~Pipeline() {};
-    bool scale(vector<float>& src, const uint32 rows, const uint32 cols, vector<uint16>& dest);
     bool preprocess();
     bool work();
+
+private:
+    bool scale(vector<float>& src, const uint32 rows, const uint32 cols, vector<uint16>& dest);
+    bool filter_genes(vector<uint16>& src, const uint32 rows, const uint32 cols, set<uint32>& genes);
+    void filter();
 
 private:
     InputData rawdata;

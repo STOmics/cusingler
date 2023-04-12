@@ -12,6 +12,7 @@
 #include <iostream>
 #include <thread>
 #include <set>
+#include <cmath>
 #include <cassert>
 using namespace std;
 
@@ -64,6 +65,130 @@ bool Pipeline::scale(vector<float>& src, const uint32 rows, const uint32 cols, v
     }
 
     return true;
+}
+
+bool Pipeline::filter_genes(vector<uint16>& src, const uint32 rows, const uint32 cols, set<uint32>& genes)
+{
+    vector<uint16> dest;
+    dest.resize(size_t(rows) * genes.size(), 0);
+
+    auto task = [&](size_t start, size_t rows, size_t cols){
+        for (size_t i = 0; i < rows; ++i)
+        {
+            uint32 nj = 0;
+            for (size_t j = 0; j < cols; ++j)
+            {
+                if (genes.count(cols-j-1) == 0)
+                    continue;
+                dest[(start+i)*genes.size()+nj] = src[(start+i)*cols+j];
+                nj++;
+            }
+        }
+    };
+    constexpr int thread_num = 20;
+    vector<thread> threads;
+    size_t start = 0;
+    size_t step = rows / thread_num;
+    if (rows % thread_num != 0)
+        step++;
+    for (int i = 0; i < thread_num; ++i)
+    {
+        start = i*step;
+        if (i == (thread_num-1))
+            step = rows - i * step;
+        thread th(task, start, step, cols);
+        // cout<<start<<" "<<step<<" "<<cols<<endl;
+        threads.push_back(std::move(th));
+    }
+    for (auto& th : threads)
+    {
+        th.join();
+    }
+
+    dest.swap(src);
+    return true;
+}
+
+void Pipeline::filter()
+{
+    set<uint32> uniq_genes;
+    int gene_thre = round(500 * pow((2/3.0), log2(2)));
+    for (int i = 0; i < label_num; ++i)
+    {
+        for (int j = 0; j < label_num; ++j)
+        {
+            if (i == j)
+                continue;
+            int pos = ctdidx[(i * label_num + j) * 2];
+            int len = ctdidx[(i * label_num + j) * 2 + 1];
+            if (len > gene_thre)
+                len = gene_thre;
+            uniq_genes.insert(ctdiff.begin()+pos, ctdiff.begin()+pos+len);
+            // cout<<"temp uniq genes size: "<<uniq_genes.size()<<endl;
+        }
+    }
+    cout<<"useful genes: "<<uniq_genes.size()<<endl;
+    unordered_map<uint32, uint32> gene_map;
+    size_t idx = 0;
+    for (auto v : uniq_genes)
+        gene_map[v] = idx++;
+
+    // re-construct trained data by filtering genes
+    vector<uint32> _ctdiff;
+    vector<uint32> _ctdidx;
+    size_t start = 0;
+    for (size_t i = 0; i < ctdidx.size(); i+=2)
+    {
+        auto s = ctdidx[i];
+        auto l = ctdidx[i+1];
+        if (s == 0 && l == 0)
+        {
+            _ctdidx.push_back(0);
+            _ctdidx.push_back(0);
+        }
+        else
+        {
+            size_t ns = _ctdiff.size(), nl = 0;
+            for (size_t j = s; j < s+l; j++)
+            {
+                if (uniq_genes.count(ctdiff[j]) == 0)
+                    continue;
+                _ctdiff.push_back(gene_map[ctdiff[j]]);
+                nl++;
+            }
+            _ctdidx.push_back(ns);
+            _ctdidx.push_back(nl);
+        }
+    }
+    _ctdiff.swap(ctdiff);
+    _ctdidx.swap(ctdidx);
+
+    // for (int i = 0; i < rawdata.test_gene_num; ++i)
+    //     if (uniq_genes.count(i) != 0 && qry[i] != 0)
+    //         cout<<qry[i]<<" ";
+    // cout<<endl;
+    // filter genes for ref data
+    filter_genes(ref, rawdata.ref_cell_num, rawdata.ref_gene_num, uniq_genes);
+
+    // filter genes for qry data
+    filter_genes(qry, rawdata.test_cell_num, rawdata.test_gene_num, uniq_genes);
+
+    rawdata.ref_gene_num = uniq_genes.size();
+    rawdata.test_gene_num = uniq_genes.size();
+
+    // for (int i = 0; i < rawdata.test_gene_num; ++i)
+    //     if (qry[i] != 0)
+    //         cout<<i<<":"<<qry[i]<<" ";
+    // cout<<endl;
+
+    // int cnt = 0;
+    // for (auto& v : uniq_genes)
+    // {
+    //     cout<<v<<" ";
+    //     if (cnt++ >= 10)
+    //         break;
+    // }
+    // cout<<endl;
 }
 
 Pipeline::Pipeline(string filename)
@@ -150,6 +275,13 @@ bool Pipeline::preprocess()
     scale(rawdata.test, rawdata.test_cell_num, rawdata.test_gene_num, qry);
     cout<<"scale qry cost time(ms): "<<timer.toc()<<endl;
     vector<float>().swap(rawdata.test);
+
+    // filter genes of datas
+    timer.tic();
+    filter();
+    cout<<"filter genes cost time(ms): "<<timer.toc()<<endl;
+    cout<<"new qry size: "<< rawdata.test_cell_num << " x "<<rawdata.test_gene_num<<endl;
+    cout<<"new ref size: "<< rawdata.ref_cell_num << " x "<<rawdata.ref_gene_num<<endl;
 
     // exit(0);
 

@@ -129,7 +129,7 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     h_ctdidx = ctdidx;
     cudaStreamSynchronize(stream);
     // std::this_thread::sleep_for(std::chrono::seconds(5));
-    std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
+    
 
     cudaMalloc((void**)&d_gene_idx, qry_width * sizeof(uint32));
     cudaMalloc((void**)&d_qry_line, qry_width * sizeof(uint16));
@@ -137,6 +137,8 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     cudaMalloc((void**)&d_ref_lines, 1000000000 * sizeof(uint16));
     cudaMalloc((void**)&d_ref_rank, 1000000000 * sizeof(float));
     cudaMalloc((void**)&d_score, 100000 * sizeof(float));
+
+    std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
 
     return true;
 }
@@ -378,6 +380,9 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
     // cout<<"uniq genes size: "<<uniq_genes.size()<<endl;
     
     vector<uint32> h_gene_idx(uniq_genes.begin(), uniq_genes.end());
+    // for(auto& g : h_gene_idx)
+    //     cout<<g<<" ";
+    // cout<<endl;
 
     // transfer qry data from cpu to gpu
     cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice);
@@ -387,9 +392,9 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
     get_device_qry_line<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_gene_idx, qry, h_gene_idx.size(), qry_width, d_qry_line);
 
     //check result of get_device_qry_line()
-    // vector<float> tmp_qry_line;
+    // vector<uint16> tmp_qry_line;
     // tmp_qry_line.resize(h_gene_idx.size(), 0);
-    // cudaMemcpy(tmp_qry_line.data(), d_qry_line, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
+    // cudaMemcpy(tmp_qry_line.data(), d_qry_line, h_gene_idx.size()*sizeof(uint16), cudaMemcpyDeviceToHost);
     // cout<<tmp_qry_line.size()<<endl;
     // for (int i = 0; i < tmp_qry_line.size(); ++i)
     //     cout<<tmp_qry_line[i]<<" ";
@@ -427,8 +432,8 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         // if (label > 5)
         // {
         //     vector<uint16> tmp_ref_line;
-        //     tmp_ref_line.resize(h_gene_idx.size()*len, 0);
-        //     cudaMemcpy(tmp_ref_line.data(), d_ref_lines, h_gene_idx.size()*len*sizeof(uint16), cudaMemcpyDeviceToHost);
+        //     tmp_ref_line.resize(h_gene_idx.size()*total_len, 0);
+        //     cudaMemcpy(tmp_ref_line.data(), d_ref_lines, h_gene_idx.size()*total_len*sizeof(uint16), cudaMemcpyDeviceToHost);
         //     uint16 max_val = 0, total_val = 0;
         //     for (int i = 0; i < tmp_ref_line.size(); ++i)
         //     {
@@ -455,8 +460,8 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         // cout<<"rows x cols: "<<len<<" x "<<h_gene_idx.size()<<endl;
 
         // vector<float> tmp_ref_line;
-        // tmp_ref_line.resize(h_gene_idx.size()*len, 0);
-        // cudaMemcpy(tmp_ref_line.data(), d_ref_lines, h_gene_idx.size()*len*sizeof(float), cudaMemcpyDeviceToHost);
+        // tmp_ref_line.resize(h_gene_idx.size()*total_len, 0);
+        // cudaMemcpy(tmp_ref_line.data(), d_ref_rank, h_gene_idx.size()*total_len*sizeof(float), cudaMemcpyDeviceToHost);
         // float max_val = 0, total_val = 0;
         // for (int i = 0; i < tmp_ref_line.size(); ++i)
         // {
@@ -480,7 +485,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         // }
         // if (label == 3)
         // {
-        //     for (int i = 0; i < len; ++i)
+        //     for (int i = 0; i < total_len; ++i)
         //         cout<<h_score[i]<<" ";
         //     cout<<endl;
         // }
@@ -522,7 +527,7 @@ vector<uint32> finetune()
     Timer timer("ms");
     // process each cell
     vector<uint32> res;
-    // for (int i = 0; i < 1; ++i)
+    // for (int i = 0; i < 100; ++i)
     for (int i = 0; i < qry_height; ++i)
     {
         uint16* qry_head = (uint16*)((char*)d_qry + i * pitchqry);
