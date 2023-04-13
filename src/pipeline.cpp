@@ -7,9 +7,13 @@
 #include "pipeline.h"
 #include "io.h"
 #include "cusingler.cuh"
-
+#include "time.h"
 #include <iostream>
 using namespace std;
+//#define test
+
+clock_t start,endt;  
+float time0,time1;
 
 Pipeline::Pipeline(string filename)
 {
@@ -22,8 +26,9 @@ Pipeline::Pipeline(string filename)
 
 bool Pipeline::preprocess()
 {
+    
+    start = clock();
     cout<<"preprocess()"<<endl;
-
     // transfer the type of obs from string to int
     auto& celltypes = rawdata.celltypes;
     label_num = celltypes.size();
@@ -80,29 +85,51 @@ bool Pipeline::preprocess()
    
     // for (size_t i = 0; i < ctdidx.size()/2; ++i)
     //     cout<<"celltype's diff cells start: "<<ctdidx[i*2]<<" len: "<<ctdidx[i*2+1]<<endl;
-        
+    endt = clock(); 
+    time0 = (float)(endt-start)/CLOCKS_PER_SEC;
+    cout<<"preprocess time:"<<time0<<endl;
     return true;
 }
 
 bool Pipeline::work()
 {
+    
+    
     cout<<"work()"<<endl;
-
+    start=clock();
+    auto start0=start;
     init();
+    endt=clock();
+    time0 = (float)(endt-start)/CLOCKS_PER_SEC;
+    cout<<"init time:"<<time0<<endl;
 
+    start=clock();
     copyin(rawdata, ctids, ctidx, ctdiff, ctdidx);
+    endt=clock();
+    time0 = (float)(endt-start)/CLOCKS_PER_SEC;
+    cout<<"copy time:"<<time0<<endl;
 
+    
+    start=clock();
     auto res = finetune();
+    endt=clock();
+    time0 = (float)(endt-start)/CLOCKS_PER_SEC;
+    cout<<"finetune time:"<<time0<<endl;
     unordered_map<uint32, uint32> m;
+    #ifdef test
+
     for (size_t i = 0; i < res.size(); ++i)
     {
         cout<<"cell idx: "<<i<<" celltype: "<<rawdata.celltypes[res[i]]<<endl;
         m[res[i]]++;
     }
+    #endif
     // for (auto& [k,v] : m)
     //     cout<<k<<" "<<v<<endl;
 
     destroy();
-
+    endt=clock();
+    time0 = (float)(endt-start0)/CLOCKS_PER_SEC;
+    cout<<"total time:"<<time0<<endl;
     return true;
 }
