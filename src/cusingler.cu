@@ -1,6 +1,7 @@
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include "cusingler.cuh"
+#include <cub/device/device_radix_sort.cuh>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -30,6 +31,7 @@ uint32* d_gene_idx;
 float* d_qry_line, *d_qry_rank;
 int* h_qry_idx_sample;//  to be realesed
 int* d_qry_idx_sample;
+ int*d_qry_idx_result;
 int* d_qry_idx;    //idx for pair sort
 float* d_ref_lines, *d_ref_rank;
 float *d_score;
@@ -92,64 +94,109 @@ bool destroy()
 }
 
 
-bool rank_by_unique(float* dataInOut ,int* dataIdx,int datalen)
-{
-    //thrust::device_ptr<float> thrust_InOut(dataInOut);
-    // for(int i=0;i<datalen;i++)
-    // {
-    //     cout<<"data: "<<thrust_InOut[i]<<endl;
-    // }
-    thrust::device_vector<float> datavec(dataInOut,dataInOut+datalen);
-    thrust::device_vector<float> out(datalen) ;
-    thrust::sort(datavec.begin(),datavec.end());
-    // for(int i=0;i<datalen;i++)
-    // {
-    //     cout<<"data: "<<datavec[i]<<endl;
-    // }
+// bool rank_by_unique(float* dataInOut ,int* dataIdx,int datalen)
+// {
+//     //thrust::device_ptr<float> thrust_InOut(dataInOut);
+//     // for(int i=0;i<datalen;i++)
+//     // {
+//     //     cout<<"data: "<<thrust_InOut[i]<<endl;
+//     // }
+//     thrust::device_vector<float> datavec(dataInOut,dataInOut+datalen);
+//     thrust::device_vector<float> out(datalen) ;
+//     thrust::sort(datavec.begin(),datavec.end());
+//     // for(int i=0;i<datalen;i++)
+//     // {
+//     //     cout<<"data: "<<datavec[i]<<endl;
+//     // }
     
-    auto eend= thrust::unique_copy(datavec.begin(), datavec.end(), out.begin());
-    auto num_unique = thrust::distance(out.begin(), eend);
+//     auto eend= thrust::unique_copy(datavec.begin(), datavec.end(), out.begin());
+//     auto num_unique = thrust::distance(out.begin(), eend);
 
-     cout<<"uniq cnt"<<num_unique<<endl;
-     for(int i=0;i<num_unique;i++)
-     {
-         cout<<"uniq data: "<<out[i]<<endl;
-     }
-    return true;
-}
+//      cout<<"uniq cnt"<<num_unique<<endl;
+//      for(int i=0;i<num_unique;i++)
+//      {
+//          cout<<"uniq data: "<<out[i]<<endl;
+//      }
+//     return true;
+// }
 
 
-__global__ void sortrank(float* dataInOut, int* dataIdx,int datalen)
-{   
-    uint32 tid=blockIdx.x*blockDim.x+threadIdx.x;
-    uint32 tid_idx;
-    uint32 offset=0;
-    uint32 num_swaps;
-    uint32 tid_idx_max=datalen-1;
-do 
-{
-    num_swaps=0;
-    tid_idx=tid*2+offset;
-    if(tid_idx<tid_idx_max)
-    {
+// __global__ void sortrank(float* dataInOut, int* dataIdx,int datalen)
+// {   
+//     uint32 tid=blockIdx.x*blockDim.x+threadIdx.x;
+//     uint32 tid_idx;
+//     uint32 offset=0;
+//     uint32 num_swaps;
+//     uint32 tid_idx_max=datalen-1;
+// do 
+// {
+//     num_swaps=0;
+//     tid_idx=tid*2+offset;
+//     if(tid_idx<tid_idx_max)
+//     {
        
-        if(dataInOut[tid_idx]>dataInOut[tid_idx+1])
-        {
-            float tmp=dataInOut[tid_idx];
-            dataInOut[tid_idx]=dataInOut[tid_idx+1];
-            dataInOut[tid_idx+1]=tmp;
-            int tmpidx=dataIdx[tid_idx];
-            dataIdx[tid_idx]=dataIdx[tid_idx+1];
-            dataIdx[tid_idx+1]=tmpidx;
-            num_swaps=1;
-        }
+//         if(dataInOut[tid_idx]>dataInOut[tid_idx+1])
+//         {
+//             float tmp=dataInOut[tid_idx];
+//             dataInOut[tid_idx]=dataInOut[tid_idx+1];
+//             dataInOut[tid_idx+1]=tmp;
+//             int tmpidx=dataIdx[tid_idx];
+//             dataIdx[tid_idx]=dataIdx[tid_idx+1];
+//             dataIdx[tid_idx+1]=tmpidx;
+//             num_swaps=1;
+//         }
         
-    }
-    offset=1-offset;
-}while(__syncthreads_count(num_swaps)!=0);
+//     }
+//     offset=1-offset;
+// }while(__syncthreads_count(num_swaps)!=0);
+
+// }
+//get rank after sort
+__global__ void sumrank_thrust(float* dataInOut,int* rankidx,const int datalen)
+{
+    // int idx = blockIdx.x*blockDim.x + threadIdx.x;
+    // if (idx < datalen) {
+    //     int dup_count = thrust::count(dataInOut, dataInOut + datalen, dataInOut[idx]);
+    //     int less_count = thrust::count_if(dataInOut, d_values + datalen, thrust::bind(thrust::less<int>(), d_values[idx]));
+    //     dataInOut[idx] = less_count + (dup_count - 1) / 2.0; // 
+    // }
 
 }
-//get rank after sort
+
+__global__ void sumrank1(float* dataIn,float* dataOut,int* rankidx,const int datalen)
+{
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+   // __shared__ float s_rank[1024] ;
+    if(tid<datalen)
+    {
+        int idxL=tid;
+        int idxR=tid;
+        while(idxL>0){
+            if(dataIn[idxL]==dataIn[idxL-1])
+            {
+                idxL--;
+            }
+            else
+            {
+                break;
+            }
+            
+        }
+        do
+        {
+            idxR++;
+        }while (idxR<datalen&(dataIn[idxR]==dataIn[idxR-1]));
+     //   s_rank[threadIdx.x]=1+idxL+float(idxR-idxL-1)/2;
+    float tmp=1+idxL+float(idxR-idxL-1)/2;
+    //输入输出不同，不需要sync  
+      //  __syncthreads();
+    //    dataOut[rankidx[tid]]=s_rank[threadIdx.x];
+    int origin_id=rankidx[tid];
+    dataOut[origin_id]=tmp;
+    }
+
+}
+
 __global__ void sumrank(float* dataInOut,int* rankidx,const int datalen)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -158,80 +205,141 @@ __global__ void sumrank(float* dataInOut,int* rankidx,const int datalen)
     {
         int idxL=tid;
         int idxR=tid;
-        while(idxL>0&(dataInOut[idxL]==dataInOut[idxL-1]))
-            idxL-=1;
+        while(idxL>0){
+            if(dataInOut[idxL]==dataInOut[idxL-1])
+            {
+                idxL--;
+            }
+            else
+            {
+                break;
+            }
+            
+        }
         do
         {
             idxR+=1;
-        }while (idxR!=datalen&(dataInOut[idxR]==dataInOut[idxR-1]));
+        }while (idxR<datalen&(dataInOut[idxR]==dataInOut[idxR-1]));
      //   s_rank[threadIdx.x]=1+idxL+float(idxR-idxL-1)/2;
-      float tmp=1+idxL+float(idxR-idxL-1)/2;
-        __syncthreads();
+    float tmp=1+idxL+float(idxR-idxL-1)/2;
+      
+    __syncthreads();
     //    dataInOut[rankidx[tid]]=s_rank[threadIdx.x];
-    dataInOut[rankidx[tid]]=tmp;
+    int origin_id=rankidx[tid];
+    dataInOut[origin_id]=tmp;
     }
 
 }
+bool sort_by_idx_batch(float* dataInOut ,int* dataIdx,int datalen,int batch_num)
+{
+
+    for(int i=0;i<batch_num;i++)
+    {
+        cout<<"batch: "<<i<<"data ptr" <<dataInOut<<endl;
+        cout<<"batch: "<<i<<"idxta ptr" <<dataIdx<<endl;
+        thrust::device_ptr<float> thrust_InOut(dataInOut);
+        thrust::device_ptr<int> thrust_Idx(dataIdx);
+        
+        cout<<"batch: "<<i<<"data ptr" <<thrust_InOut<<endl;
+        cout<<"batch: "<<i<<"idxta ptr" <<thrust_Idx<<endl;
+        cout<<"datalen"<<datalen<<endl;
+        cout<<"start seq"<<endl;
+        thrust::sequence(thrust_Idx,thrust_Idx+datalen);  
+        cout<<"seq end"<<endl;
+        //thrust::sort_by_key(thrust_InOut+i*datalen,thrust_InOut+(i+1)*datalen,thrust_Idx);
+        thrust::sort_by_key(thrust_InOut,thrust_InOut+datalen,thrust_Idx);
+        cout<<"sort end"<<endl;
+        //get rank
+        cout<<"batch: "<<i<<"data ptr" <<thrust_InOut<<endl;
+        cout<<"batch: "<<i<<"idxta ptr" <<thrust_Idx<<endl;
+        for(int j=0;j<datalen;j++)
+        cout<<"data: "<<j<<" "<<thrust_InOut[j]<<"idx："<<thrust_Idx[j]<<endl;
+        sumrank<<<datalen/512+1,512>>>(dataInOut,dataIdx,datalen);
+         //cudaDeviceSynchronize();
+        cout<<"batch sumrank end"<<endl;
+    // 输出排序后的数据和索引
+    cout<<"batch: "<<i<<"data ptr" <<thrust_InOut<<endl;
+    cout<<"batch: "<<i<<"data ptr" <<thrust_Idx<<endl;
+    // for(int j=0;j<datalen;j++)
+    //     cout<<"data: "<<j<<" "<<thrust_InOut[j]<<"idx："<<thrust_Idx[j]<<endl;
+        
+     }
+   
+  //  getchar();
+    return true;
+}
+bool sort_cub_batch(float* dataIn ,float* dataOut,void* d_temp_storage,size_t temp_storage_bytes,int* dataIdx,int datalen,int batch_num)
+{
+
+    //typedef cub::KeyValuePair<float, int> KeyValuePair;
+
+    cub::DeviceRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
+    d_ref_lines, d_ref_lines, d_qry_idx, d_qry_idx, datalen);
+      
+    return true;
+}    
+bool sort_by_idx1(float* dataIn ,float* dataOut,int* dataIdx,int datalen)
+{
+    thrust::device_ptr<float> thrust_In(dataIn);
+    thrust::device_ptr<int> thrust_Idx(dataIdx);
+    
+    thrust::sequence(thrust_Idx,thrust_Idx+datalen);    
+   
+
+  
+    thrust::sort_by_key(thrust_In,thrust_In+datalen,thrust_Idx);
+    
+    cout<<" sumrank start"<<endl;
+    sumrank1<<<datalen/512+1,512>>>(dataIn,dataOut,dataIdx,datalen);
+    cout<<" sumrank end"<<endl;
+    thrust::device_ptr<float> thrust_Out(dataOut);
+    for(int j=0;j<datalen;j++)
+        cout<<"data: "<<j<<" "<<thrust_Out[j]<<"idx："<<thrust_Idx[j]<<endl;
+   // for(int i=0;i<datalen;i++)
+    // {
+    //     cout<<"data: "<<thrust_InOut[i]<<endl;
+    //     //cout <<"idx："<<thrust_Idx[i]<<endl;
+    // }
+    cout<<" sumrank1 end"<<endl;
+
+    
+    return true;
+
+}
+
+
 bool sort_by_idx1(float* dataInOut ,int* dataIdx,int datalen)
 {
-    //get thrust ptr
-    // std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
+ 
     thrust::device_ptr<float> thrust_InOut(dataInOut);
-    thrust::device_ptr<int> thrust_Idx(dataIdx);     
-    // getchar();
-    // std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;  
-    // getchar();
-    
-    //
-    // thrust::sort_by_key(thrust_InOut,thrust_InOut+datalen,thrust_Idx);
+    thrust::device_ptr<int> thrust_Idx(dataIdx);
+    thrust::sequence(thrust_Idx,thrust_Idx+datalen);    
+    cout<<"seq end"<<std::endl;  
+    cout<<"start sort"<<endl;
+    thrust::sort_by_key(thrust_InOut,thrust_InOut+datalen,thrust_Idx);
+    cout<<"sort end"<<endl;
+   
     // for(int i=0;i<datalen;i++)
     // {
-    //     cout<<"data: "<<thrust_InOut[i]<<"idx："<<thrust_Idx[i]<<endl;
+    //     cout<<"data: "<<i<<" "<<thrust_InOut[i]<<"idx："<<thrust_Idx[i]<<endl;
     // }
     //get rank
-    sumrank<<<datalen/256+1,256>>>(dataInOut,dataIdx,datalen);
+    sumrank<<<datalen/512+1,512>>>(dataInOut,dataIdx,datalen);
+    for(int j=0;j<datalen;j++)
+        cout<<"data: "<<j<<" "<<thrust_InOut[j]<<"idx："<<thrust_Idx[j]<<endl;
+        
+
     // for(int i=0;i<datalen;i++)
     // {
-    //     cout<<"data: "<<thrust_InOut[i]<<"idx："<<thrust_Idx[i]<<endl;
+    //     cout<<"data: "<<thrust_InOut[i]<<endl;
+    //     //cout <<"idx："<<thrust_Idx[i]<<endl;
     // }
-    // getchar();
+    cout<<" sumrank end"<<endl;
+  
+
+    cudaDeviceSynchronize();
     return true;
 }
-bool sort_by_idx(float* dataInOut ,int* dataIdx,int *uniqueidx,float*uniqueout,int datalen)
-{
-    //get thrust ptr
-    thrust::device_ptr<float> thrust_InOut(dataInOut);
-    // thrust::device_ptr<float> thrust_Out(dataOut);
-    // create index on dev
-//     thrust::device_ptr<int> thrust_Idx(dataIdx);  
-//     thrust::device_vector<float> uniqueout(datalen);
-//     thrust::device_vector<int> uniqueidx(datalen);
-//     //sort
-//    // cout<<"length rank"<<datalen<<endl;
-//     //thrust::unique
-//     thrust::sort_by_key(thrust_InOut,thrust_InOut+datalen,thrust_Idx);
-//     auto eend=thrust::unique_copy(thrust_InOut,thrust_InOut+datalen,uniqueout);
-//     // for(int i=0;i<datalen;i++)
-//     // {
-//     //     cout<<"data: "<<thrust_InOut[i]<<" idx: "<<thrust_Idx[i]<<endl;
-//     // }
-//     auto num_unique = thrust::distance(uniqueout, eend);
-    //for test
-    //uniqueout.data();
-    //uniqueidx.data();
-
-    #ifdef LOG
-    // for(int i=0;i<num_unique;i++)
-    // {
-    // cout<<"datauni: "<<uniqueout[i]<<endl;
-    // }
-    //getchar();
-    #endif
-
-
-    return true;
-}
-
 
 
 bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, vector<uint32>& ctdiff, vector<uint32>& ctdidx)
@@ -292,19 +400,21 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     cudaMalloc((void**)&d_gene_idx, qry_width * sizeof(uint32));
     cudaMalloc((void**)&d_qry_line, qry_width * sizeof(float));
     cudaMalloc((void**)&d_qry_rank, qry_width * sizeof(float));
-    int idx_len=10000;
+    //排序idx空间，暂定10000
+    int idx_len=10000;  
     cudaMalloc((void**)&d_qry_idx_sample,idx_len*sizeof(int));
     //create origin idx array on CPU and copy to GPU
     h_qry_idx_sample=(int*)malloc(idx_len*sizeof(idx_len));
     for (int i = 0; i < idx_len; ++i)
     {
         h_qry_idx_sample[i] = i;
-
     }
     CHECK(cudaMemcpyAsync(d_qry_idx_sample,h_qry_idx_sample,idx_len*sizeof(int),cudaMemcpyHostToDevice,stream));
     //use idx sample to reset idx array on GPU
+   
+    cudaMalloc((void**)&d_qry_idx_result,idx_len*sizeof(int));
     cudaMalloc((void**)&d_qry_idx,idx_len*sizeof(int));
-    cudaMalloc((void**)&d_ref_lines, 100000000 * sizeof(float));
+    CHECK( cudaMalloc((void**)&d_ref_lines, 100000000 * sizeof(float)) );
     cudaMalloc((void**)&d_ref_rank, 100000000 * sizeof(float));
     cudaMalloc((void**)&d_score, 100000 * sizeof(float));
 
@@ -437,7 +547,7 @@ vector<uint32> finetune_round(float* qry, vector<uint32> top_labels)
     }
     t1=clock();
     time=(float)(t1-t0)/CLOCKS_PER_SEC;
-    cout<<"get uniq_genes: "<<time<<endl;
+    cout<<"get uniq_genes time: "<<time<<endl;
     // cout<<"uniq genes size: "<<uniq_genes.size()<<endl;
     // t0=clock();
     vector<uint32> h_gene_idx(uniq_genes.begin(), uniq_genes.end());
@@ -445,86 +555,26 @@ vector<uint32> finetune_round(float* qry, vector<uint32> top_labels)
     // transfer qry data from cpu to gpu
     CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
     CHECK(cudaMemcpy(d_qry_idx,d_qry_idx_sample,10000*sizeof(int),cudaMemcpyDeviceToDevice));//copy oringin idx to current idx for sort
-  
-    // CHECK(cudaMemcpyAsync(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice,stream));
-    // CHECK(cudaMemcpyAsync(d_qry_idx,d_qry_idx_sample,10000*sizeof(int),cudaMemcpyDeviceToDevice,stream));//copy oringin idx to current idx for sort
-    // CHECK(cudaStreamSynchronize(stream));
-
-  
-    // cudaMemset(d_qry_line, 0, qry_width * sizeof(float));
-    // cudaMemset(d_qry_rank, 0, qry_width * sizeof(float));
-    // cudaMemcpy(d_qry_line, h_qry_line.data(), h_qry_line.size()*sizeof(float), cudaMemcpyHostToDevice);
     get_device_qry_line<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_gene_idx, qry, h_gene_idx.size(), qry_width, d_qry_line);
 
-    //check result of get_device_qry_line()
-    // vector<float> tmp_qry_line;
-    // tmp_qry_line.resize(h_gene_idx.size(), 0);
-    // cudaMemcpy(tmp_qry_line.data(), d_qry_line, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
-    // cout<<tmp_qry_line.size()<<endl;
-    // for (int i = 0; i < tmp_qry_line.size(); ++i)
-    //     cout<<tmp_qry_line[i]<<" ";
-    // cout<<endl;
-    
+
     // rank for qry line
-  
-    cout<<"thrust sortLen: "<<h_gene_idx.size()<<endl;
-    //rank_by_unique(d_qry_line,d_qry_idx,h_gene_idx.size());
-   // getchar();
-    // thrust::device_ptr<float> thrust_InOut(d_qry_line);
-    sort_by_idx1(d_qry_line,d_qry_idx,h_gene_idx.size());
-   // sortrank<<< (h_gene_idx.size()/2)/1024 + 1, 1024 >>>(d_qry_line,d_qry_idx,h_gene_idx.size());
-    cout<<"thrust end:"<<h_gene_idx.size()<<endl;
-    // vector<float> tmp_qryed;
-    // vector<int> tmp_qryed_idx;
-    // tmp_qryed.resize(h_gene_idx.size(), 0);
-    // tmp_qryed_idx.resize(h_gene_idx.size(), 0);
-
-    // CHECK( cudaMemcpy(tmp_qryed_idx.data(), d_qry_idx, h_gene_idx.size()*sizeof(int), cudaMemcpyDeviceToHost));
-    // CHECK(cudaMemcpy(tmp_qryed.data(),d_qry_line, h_gene_idx.size()*sizeof(float),cudaMemcpyDeviceToHost));
-    // for (int i = 0; i < h_gene_idx.size(); ++i)
-    //     {
-    //         cout<<"data"<<tmp_qryed[i]<<" ";
-    //         cout<<"idx"<<tmp_qryed_idx[i]<<endl;
-    //     }
-    // getchar();
-
-    // cudaMalloc((void**)&unique_idx,h_gene_idx.size()*sizeof(int));
-    // cudaMalloc((void**)&unique_val,h_gene_idx.size()*sizeof(float));
+    sort_by_idx1(d_qry_line,d_qry_rank, d_qry_idx,h_gene_idx.size());
     
-    //sort_by_idx1(d_qry_line,d_qry_idx,h_gene_idx.size());
-   // sort_by_idx(d_qry_line,d_qry_idx,,,h_gene_idx.size());
-    //getchar();
-    // thrust::device_ptr<float> thrust_InOut(d_qry_line);
-    // thrust::device_ptr<int> thrust_Idx(d_qry_idx);
-    // thrust::sort_by_key(dataInOut,dataInOut+h_gene_idx.size(),dataIdx);
-    // thrust::device_ptr<float> d_qry_line_Thrust(d_qry_line);
-
-    // t0=clock();
-
-    // thrust::sort(d_qry_line_Thrust,d_qry_line_Thrust+h_gene_idx.size());
+    
     time=(float)(t1-t0)/CLOCKS_PER_SEC;
-    cout<<"sort : "<<time<<endl;
-
-    //thrust::sort_by_key(d_qry_line_Thrust,d_qry_line_Thrust+h_gene_idx.size(),ids);
-    cout<<"thrust end"<<endl;
-  //  getchar();
-    
-   // rankdata<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_qry_line, h_gene_idx.size(), d_qry_rank);
-   
-    // t1=clock();
-    // time=(float)(t1-t0)/CLOCKS_PER_SEC;
-    // cout<<"rankdata 1st : "<<time<<endl;
-    // cudaMemcpy(tmp_qry_line.data(), d_qry_rank, h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost);
-    // cout<<tmp_qry_line.size()<<endl;
-    // for (int i = 0; i < tmp_qry_line.size(); ++i)
-    //     cout<<tmp_qry_line[i]<<" ";
-    // cout<<endl;
-
     // get filtered cells of ref data
-    // cudaMemset(d_ref_lines, 0, 1000000 * sizeof(float));
-    // cudaMemset(d_ref_rank, 0, 1000000 * sizeof(float));
+     cudaMemset(d_ref_lines, 0, 1000000 * sizeof(float));
+     cudaMemset(d_ref_rank, 0, 1000000 * sizeof(float));
     
     vector<float> scores;
+    //init cub buffer
+    void     *d_temp_storage = NULL;
+    size_t   temp_storage_bytes = 0;
+    cub::DeviceRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
+    d_ref_lines, d_ref_lines, d_qry_idx, d_qry_idx_result, h_gene_idx.size());
+    cudaMalloc(&d_temp_storage, temp_storage_bytes);
+    
     for (auto& label : top_labels)
     {
       
@@ -534,46 +584,133 @@ vector<uint32> finetune_round(float* qry, vector<uint32> top_labels)
         
         dim3 blockDim(32, 32);
         dim3 gridDim(len/32+1, h_gene_idx.size()/32+1);
-        t0=clock();
         get_device_ref_lines<<< gridDim, blockDim >>>
             (d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, ref_width, pitchref, d_ref_lines);
-        t1=clock();
-        time=(float)(t1-t0)/CLOCKS_PER_SEC;
-        cout<<"label:"<<label<<" get_device_ref_lines : "<<time<<endl;
-        // check result of get_device_ref_lines()
-        // vector<float> tmp_ref_line;
-        // tmp_ref_line.resize(h_gene_idx.size()*len, 0);
-        // cudaMemcpy(tmp_ref_line.data(), d_ref_lines, h_gene_idx.size()*len*sizeof(float), cudaMemcpyDeviceToHost);
-        // float max_val = 0, total_val = 0;
-        // for (int i = 0; i < tmp_ref_line.size(); ++i)
-        // {
-        //     max_val = max(max_val, tmp_ref_line[i]);
-        //     total_val += tmp_ref_line[i];
-        //     if (tmp_ref_line[i] > 10)
-        //         cout<<i<<","<<tmp_ref_line[i]<<" ";
-        // }
-        // cout<<max_val<<" "<<total_val<<endl;
 
         // rank for ref lines
         t0=clock();
-        for (int i = 0; i < len; ++i)
+        //reset idx
+        CHECK(cudaMemcpy(d_qry_idx,d_qry_idx_sample,10000*sizeof(int),cudaMemcpyDeviceToDevice));
+        for(int batch=1;batch<len;batch++)
         {
-            //sortrank<<< (h_gene_idx.size()/2)/1024 + 1, 1024 >>>(d_qry_line,d_qry_idx,h_gene_idx.size());
-          //  sortrank<<<(h_gene_idx.size()/2)/1024 + 1, 1024>>>(d_ref_lines+i*h_gene_idx.size(),d_qry_idx,h_gene_idx.size());
-    //         CHECK( cudaMemcpy(tmp_qryed.data(), d_ref_lines+i*h_gene_idx.size(), h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost));
-    //         CHECK( cudaMemcpy(tmp_qryed_idx.data(), d_qry_idx, h_gene_idx.size()*sizeof(int), cudaMemcpyDeviceToHost));
-    // for (int i = 0; i < h_gene_idx.size(); ++i)
-    //     {
-    //         cout<<"data"<<tmp_qryed[i]<<" ";
-    //         cout<<"idx"<<tmp_qryed_idx[i]<<endl;
-    //     }
-    // getchar();
-        sort_by_idx1(d_ref_lines+i*h_gene_idx.size(),d_qry_idx,h_gene_idx.size());
-           // rankdata<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_ref_lines+i*h_gene_idx.size(), h_gene_idx.size(), d_ref_rank+i*h_gene_idx.size());
+            cout<<"batch"<<batch<<endl;
+
+            //sort ref_line 
+            cout<<"ref ptr"   <<    d_ref_lines<<endl;    
+            cudaError_t error_code;
+            cub::DeviceRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
+                                            d_ref_lines+batch*h_gene_idx.size(), 
+                                            d_ref_lines+batch*h_gene_idx.size(), 
+                                            d_qry_idx, d_qry_idx_result,
+                                            h_gene_idx.size());
+           
+           // cudaDeviceSynchronize();
+            //caculate rank    
+            cout<<" sumrank start"<<endl;          
+            // vector<float> tmp_rank;
+            // tmp_rank.resize(h_gene_idx.size(),0);
+            // CHECK(cudaMemcpy(tmp_rank.data(),d_ref_rank+batch*h_gene_idx.size(),h_gene_idx.size()*sizeof(float),cudaMemcpyDeviceToHost));
+            // for(int i=0;i<h_gene_idx.size();i++)
+            // {
+            //     cout<<tmp_rank[i]<<" ";
+            // }
+            // cout<<endl;
+            // vector<float> tmp_ref;
+            // tmp_ref.resize(h_gene_idx.size(),0);
+            // CHECK(cudaMemcpy(tmp_ref.data(),d_ref_lines+batch*h_gene_idx.size(),h_gene_idx.size()*sizeof(float),cudaMemcpyDeviceToHost));
+            // for(int i=0;i<h_gene_idx.size();i++)
+            // {
+            //     cout<<tmp_ref[i]<<" ";
+            // }
+            // cout<<endl;          
+            // vector<int> tmp_idx;
+            // tmp_idx.resize(h_gene_idx.size(),0);
+            // CHECK(cudaMemcpy(tmp_idx.data(),d_qry_idx,h_gene_idx.size()*sizeof(int),cudaMemcpyDeviceToHost));
+            // for(int i=0;i<h_gene_idx.size();i++)
+            // {
+            //     cout<<tmp_idx[i]<<" ";
+            // }
+            // cout<<endl;
+            // vector<int> tmp_idx_result;
+            // tmp_idx_result.resize(h_gene_idx.size(),0);
+            // CHECK(cudaMemcpy(tmp_idx_result.data(),d_qry_idx_result,h_gene_idx.size()*sizeof(int),cudaMemcpyDeviceToHost));
+            // for(int i=0;i<h_gene_idx.size();i++)
+            // {
+            //     cout<<tmp_idx_result[i]<<" ";
+            // }
+            // cout<<endl;
+            // cout<<h_gene_idx.size()<<endl;
+
+            sumrank1<<<h_gene_idx.size()/1024+1,1024>>>(d_ref_lines+batch*h_gene_idx.size(),d_ref_rank+batch*h_gene_idx.size(),d_qry_idx,h_gene_idx.size());
+
+            error_code = cudaGetLastError();
+if (error_code != cudaSuccess)
+{
+    std::cerr << "Error: CUDA API call failed with error message: " << cudaGetErrorString(error_code) << std::endl;
+    // 处理错误
+   
+}                 
+            // cudaDeviceSynchronize();
+            // CHECK(cudaMemcpy(tmp_rank.data(),d_ref_rank+batch*h_gene_idx.size(),h_gene_idx.size()*sizeof(float),cudaMemcpyDeviceToHost));
+            // for(int i=0;i<h_gene_idx.size();i++)
+            // {
+            //     cout<<tmp_rank[i]<<" ";
+            // }
+
+
+ error_code = cudaGetLastError();
+if (error_code != cudaSuccess)
+{
+    std::cerr << "Error: CUDA API call failed with error message: " << cudaGetErrorString(error_code) << std::endl;
+    // 处理错误
+   
+}                                  
+            cout<<" sumrank end"<<endl;
+            if (batch==0)
+            {
+
+                   cout<<"ref d_qry_idx_result"   <<    d_qry_idx_result<<endl;  
+                   if (error_code != cudaSuccess)
+                    {
+                    std::cerr << "Error: CUDA API call failed with error message: " << cudaGetErrorString(error_code) << std::endl;
+                    // 处理错误          
+                    }     
+                    vector<float> tmp_rank_line;
+                
+                    tmp_rank_line.resize(h_gene_idx.size()*len, 0);
+                    CHECK(cudaMemcpy(tmp_rank_line.data(), d_ref_lines+batch*h_gene_idx.size(), h_gene_idx.size()*sizeof(float), cudaMemcpyDeviceToHost));
+                    for(int j=0;j<100;j++)
+                        {
+                         cout<<tmp_rank_line[j]<<endl;
+                        }
+                        getchar();
+
+            }
+
         }
+        //sort_cub_batch(d_ref_lines,d_ref_rank,d_temp_storage,temp_storage_bytes,d_qry_idx,h_gene_idx.size(),len);
+        cout<<"sort end"<<endl;
+        
+
+
+        // float* reftmp;
+        // cudaMalloc((void**)&reftmp,sizeof(float)*h_gene_idx.size());      
+        // //sort_by_idx_batch(d_ref_lines,d_qry_idx,h_gene_idx.size(),len);
+        // // rankdata<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_ref_lines+i*h_gene_idx.size(), h_gene_idx.size(), d_ref_rank+i*h_gene_idx.size());
+        // for(int i=0;i<len;i++)
+        // {
+        //     cudaMemcpy(reftmp,d_ref_lines+i*h_gene_idx.size(),sizeof(float)*h_gene_idx.size(),cudaMemcpyDeviceToDevice);
+        //     cout<<"batch:"<<i<<endl;
+        //     sort_by_idx1(reftmp,d_qry_idx,h_gene_idx.size());
+        //    //sort_by_idx1(reftmp,d_ref_rank+i*h_gene_idx.size(),d_qry_idx,h_gene_idx.size());
+        //    cudaMemcpy(d_ref_rank+i*h_gene_idx.size(),reftmp,sizeof(float)*h_gene_idx.size(),cudaMemcpyDeviceToDevice);
+        // }
+
+
         t1=clock();
         time=(float)(t1-t0)/CLOCKS_PER_SEC;
         cout<<"label:"<<label<<" rankdata  len "<<len<<"time:"<<time<<endl;
+        getchar();
         // vector<float> tmp_ref_line;
         // tmp_ref_line.resize(h_gene_idx.size()*len, 0);
         // cudaMemcpy(tmp_ref_line.data(), d_ref_lines, h_gene_idx.size()*len*sizeof(float), cudaMemcpyDeviceToHost);
@@ -586,7 +723,7 @@ vector<uint32> finetune_round(float* qry, vector<uint32> top_labels)
         // cout<<max_val<<" "<<total_val<<endl;
 
         // spearman
-        // cudaMemset(d_score, 0, 1000 * sizeof(float));
+        cudaMemset(d_score, 0, 1000 * sizeof(float));
         t0=clock();
         spearman<<< len/1024 + 1, 1024 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), len, d_score);
         t1=clock();
@@ -594,7 +731,9 @@ vector<uint32> finetune_round(float* qry, vector<uint32> top_labels)
         cout<<"label:"<<label<<" spearman : "<<time<<endl;
         vector<float> h_score;
         h_score.resize(len, 0);
-        cudaMemcpy(h_score.data(), d_score, len*sizeof(float), cudaMemcpyDeviceToHost);
+        errcode=cudaMemcpy(h_score.data(), d_score, len*sizeof(float), cudaMemcpyDeviceToHost);
+        cout<<errcode<<endl;
+        //CHECK(cudaMemcpy(h_score.data(), d_score, len*sizeof(float), cudaMemcpyDeviceToHost));
         // cout<<"score len: "<<len<<endl;
         // if (scores.size() == 1)
         // {
