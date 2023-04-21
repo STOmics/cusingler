@@ -20,24 +20,26 @@ cudaStream_t stream;
 float* d_ref, *d_qry;
 vector<float> h_labels;
 uint32 ref_height, ref_width, qry_height, qry_width;
+uint32 ref_lines_width;
 uint32 ct_num;
 uint32* d_ctids;
 vector<uint32> h_ctidx;
 vector<uint32> h_ctdiff, h_ctdidx;
 size_t pitchref;
 size_t pitchqry;
+size_t pitch_ref_lines;
 
 uint32* d_gene_idx;
 float* d_qry_line, *d_qry_rank;
-int* h_qry_idx_sample;//  to be realesed
-int* d_qry_idx_sample;
- int*d_qry_idx_result;
-int* d_qry_idx;    //idx for pair sort
+// int* h_qry_idx_sample;//  to be realesed
+// int* d_qry_idx_sample;
+//  int*d_qry_idx_result;
+// int* d_qry_idx;    //idx for pair sort
 float* d_ref_lines, *d_ref_rank;
 float *d_score;
 int *d_ref_idx;
 
-// unit is MB
+cudaError_t err;
 #define CHECK(call)                                                       \
 {                                                                         \
    const cudaError_t error = call;                                        \
@@ -48,7 +50,7 @@ int *d_ref_idx;
       exit(1);                                                            \
    }                                                                      \
 }
-
+// unit is MB
 uint32 getUsedMem()
 {
     size_t free, total;
@@ -64,10 +66,12 @@ bool init()
     d_ref = NULL;
     d_qry = NULL;
     ref_height = ref_width = qry_height = qry_width = 0;
+    ref_lines_width = 0;
     ct_num = 0;
     d_ctids = NULL;
     pitchref=0;
     pitchqry=0;
+    pitch_ref_lines=0;
     return true;
 }
 
@@ -81,7 +85,7 @@ bool destroy()
     // cudaFree(d_ctidx);
     // cudaFree(d_ctdiff);
     // cudaFree(d_ctdidx);
-    free(h_qry_idx_sample);
+    //free(h_qry_idx_sample);
 
 
     cudaFree(d_gene_idx);
@@ -167,8 +171,208 @@ bool destroy()
 //     }
 
 // }
+// __global__ void rankdata_batch_s(float* dataIn,float* dataOut,const int datalen,const int step,const int tail,const int batch)
+// {
+//     __shared__ float data_line[4096];
+    
+//     int tid = blockIdx.x * blockDim.x + threadIdx.x;
+//     int batchid=tid/datalen;
+    
+//     if(tid<datalen*batch)
+//     {
+//     //copy data to shared memory
+//     if (threadIdx.x<tail)
+//     {
+//         for(int i=0;i<step;i++)
+//         {
+//             data_line[threadIdx.x*i]=dataIn[batchid*datalen+threadIdx.x*i];
+//         }
+//     }
+//     if(threadIdx.x>=tail)
+//     {
+//         for(int i=0;i<step-1;i++)
+//         {
+//             data_line[threadIdx.x*i]=dataIn[batchid*datalen+threadIdx.x*i];
+//         }
+//     }
+//     __syncthreads();
+//     //get rank
+//     if (threadIdx.x<tail)
+//     {
+
+//         for(int j=0; j<step;j++)      
+//         {
+//             int equl_cnt=0;
+//             int less_cnt=1;
+//            for(int i=0;i<datalen;i++)
+//               {
+                
+//                 if(data_line[i]<data_line[threadIdx.x*j])
+//                 {
+//                     less_cnt++;
+//                 }
+//                 else if(data_line[i]==data_line[threadIdx.x*j])
+//                 {
+//                     equl_cnt++;
+//                 }
+                
+//               }
+//              dataOut[batchid*datalen+threadIdx.x*j]=less_cnt+(equl_cnt-1)/2.0; 
+//         }
+        
+//     }
+//     if(threadIdx.x>=tail)
+//     {
+
+//         for(int j=0; j<step-1;j++)      
+//         {
+//             int equl_cnt=0;
+//             int less_cnt=1;
+//             for(int i=0;i<datalen;i++)
+//                 { 
+//                 if(data_line[i]<data_line[threadIdx.x*j])
+//                 {
+//                     less_cnt++;
+//                 }
+//                 else if(data_line[i]==data_line[threadIdx.x*j])
+//                 {
+//                     equl_cnt++;
+//                 }
+//                 }
+//             dataOut[batchid*datalen+threadIdx.x*j]=less_cnt+(equl_cnt-1)/2.0;
+//         }
+//     }
+
+//     }
+//     __syncthreads();
+// }
+__global__ void rankdata_batch_s(float* dataIn,float* dataOut,const int datalen,const int batch)
+{
+    __shared__ float data_line[3072];
+    
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int batchid=tid/datalen;
+    int step=(datalen-1)/blockDim.x+1;
+
+    if(tid<datalen*batch)
+    {
+    //copy data to shared memory
+    for(int i=0;i<step;i++)
+    {
+        if(threadIdx.x+i*blockDim.x<datalen)
+        {
+            data_line[threadIdx.x+i*blockDim.x]=dataIn[batchid*datalen+threadIdx.x+i*blockDim.x];
+        }
+    }
+    //
+    //__syncthreads();
+    //get rank
+
+        for(int j=0; j<step;j++)      
+        {
+            float equl_cnt=0;
+            float less_cnt=1;
+           for(int i=0;i<datalen;i++)
+              {
+                
+                if(data_line[i]<data_line[threadIdx.x+j*blockDim.x])
+                {
+                    less_cnt++;
+                }
+                else if(data_line[i]==data_line[threadIdx.x+j*blockDim.x])
+                {
+                    equl_cnt++;
+                }
+                
+              }
+             dataOut[batchid*datalen+threadIdx.x+j*blockDim.x]=less_cnt+(equl_cnt-1)/2.0; 
+        }    
+
+
+    }
+
+}
+
+__global__ void rankdata_batch_s_dynamic(float* dataIn,float* dataOut,const int datalen,const int step,const int batch)
+{
+    extern __shared__ float data_line[];
+    
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int batchid=tid/datalen;
+    
+
+    if(tid<datalen*batch)
+    {
+    //copy data to shared memory
+    
+    for(int i=0;i<step;i++)
+    {
+        if(step*threadIdx.x+i<datalen)
+        {
+            data_line[step*threadIdx.x+i]=dataIn[batchid*datalen+step*threadIdx.x+i];
+        }
+ 
+    }
+    //
+    __syncthreads();
+    //get rank
+    for(int i=0;i<step;i++)
+    {
+        float equl_cnt=0;
+        float less_cnt=1;
+        if(step*threadIdx.x+i<datalen)
+        {
+            for(int j=0;j<datalen;j++)
+            {
+                if(data_line[j]<data_line[step*threadIdx.x+i])
+                {
+                    less_cnt++;
+                }
+                else if(data_line[j]==data_line[step*threadIdx.x+i])
+                {
+                    equl_cnt++;
+                }
+            }
+            dataOut[batchid*datalen+step*threadIdx.x+i]=less_cnt+(equl_cnt-1)/2.0;
+        }
+    }
+
+    }
+}
+
+__global__ void rankdata_batch(int* dataIn,int* dataOut,const int datalen,const int batch)
+{
+
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if(tid<datalen*batch)
+    {
+        int batchid=tid/datalen;
+        int equl_cnt=0;
+        int less_cnt=1;
+        for(int i=0;i<datalen;i++)
+        {
+            
+            
+                if(dataIn[tid]>dataIn[batchid*datalen+i])
+                {
+                    less_cnt++;
+                }
+                else if(dataIn[tid]==dataIn[batchid*datalen+i])
+                {
+                    equl_cnt++;
+                }
+            
+        }
+        dataOut[tid]=less_cnt+(equl_cnt-1)/2;
+    }
+
+}
+
+
+
 __global__ void rankdata_batch(float* dataIn,float* dataOut,const int datalen,const int batch)
 {
+
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if(tid<datalen*batch)
     {
@@ -196,153 +400,227 @@ __global__ void rankdata_batch(float* dataIn,float* dataOut,const int datalen,co
 
 }
 
-__global__ void sumrank1(float* dataIn,float* dataOut,int* rankidx,const int datalen)
+__global__ void rankdata_pitch_batch(float*dataIn,float* dataOut,const int datalen ,const int pitch,const int batch)
+{
+    __shared__ float s_data_line[4096];
+    int step=(datalen-1)/blockDim.x+1;
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if(tid<datalen*batch)
+    {
+        
+        float equl_cnt=0;
+        float less_cnt=1;
+        //copy data to shared memory
+        float* dataIn_batch=(float*)((char*)dataIn+blockIdx.x*pitch);
+        for(int i=0;i<step;i++)
+        {
+            if(step*threadIdx.x+i<datalen)
+            {
+                s_data_line[step*threadIdx.x+i]=dataIn_batch[step*threadIdx.x+i];
+                
+            }
+        }
+
+        __syncthreads();
+        //get rank
+        for(int i=0;i<step;i++)
+        {
+            if(step*threadIdx.x+i<datalen)
+            {
+                for(int j=0;j<datalen;j++)
+                {
+                    if(s_data_line[j]<s_data_line[step*threadIdx.x+i])
+                    {
+                        less_cnt++;
+                    }
+                    else if(s_data_line[j]==s_data_line[step*threadIdx.x+i])
+                    {
+                        equl_cnt++;
+                    }
+                }
+            dataOut[blockIdx.x*datalen+step*threadIdx.x+i]=less_cnt+(equl_cnt-1)/2.0;
+            }
+        }
+
+    }
+
+}
+
+__global__ void rankdata(float* dataIn,float* dataOut,const int datalen)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-   // __shared__ float s_rank[1024] ;
     if(tid<datalen)
     {
-        int idxL=tid;
-        int idxR=tid;
-        while(idxL>0){
-            if(dataIn[idxL]==dataIn[idxL-1])
-            {
-                idxL--;
-            }
-            else
-            {
-                break;
-            }
+        float equl_cnt=0;
+        float less_cnt=1;
+        for(int i=0;i<datalen;i++)
+        {        
+                if(dataIn[tid]>dataIn[i])
+                {
+                    less_cnt++;
+                }
+                else if(dataIn[tid]==dataIn[i])
+                {
+                    equl_cnt++;
+                }
             
         }
-        do
-        {
-            idxR++;
-        }while (idxR<datalen&(dataIn[idxR]==dataIn[idxR-1]));
-     //   s_rank[threadIdx.x]=1+idxL+float(idxR-idxL-1)/2;
-    float tmp=1+idxL+float(idxR-idxL-1)/2;
-    //输入输出不同，不需要sync  
-      //  __syncthreads();
-    //    dataOut[rankidx[tid]]=s_rank[threadIdx.x];
-    int origin_id=rankidx[tid];
-    dataOut[origin_id]=tmp;
+        dataOut[tid]=less_cnt+(equl_cnt-1)/2;
     }
 
-}
-
-
-
-__global__ void sumrank(float* dataInOut,int* rankidx,const int datalen)
-{
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-   // __shared__ float s_rank[1024] ;
-    if(tid<datalen)
-    {
-        int idxL=tid;
-        int idxR=tid;
-        while(idxL>0){
-            if(dataInOut[idxL]==dataInOut[idxL-1])
-            {
-                idxL--;
-            }
-            else
-            {
-                break;
-            }
-            
-        }
-        do
-        {
-            idxR+=1;
-        }while (idxR<datalen&(dataInOut[idxR]==dataInOut[idxR-1]));
-     //   s_rank[threadIdx.x]=1+idxL+float(idxR-idxL-1)/2;
-    float tmp=1+idxL+float(idxR-idxL-1)/2;
-      
-    __syncthreads();
-    //    dataInOut[rankidx[tid]]=s_rank[threadIdx.x];
-    int origin_id=rankidx[tid];
-    dataInOut[origin_id]=tmp;
-    }
-
-}
-
-bool rank_by_thurst(float* dataIn,float* dataOut,int datalen)
-{
-    thrust::device_ptr<float> thrust_In(dataIn);
-    thrust::device_ptr<float> thrust_Out(dataOut);
-    for(int i=0;i<datalen;i++)
-    {
-        float dup_count = thrust::count(thrust_In, thrust_In + datalen, thrust_In[i]);
-        float less_count = thrust::count_if(thrust_In, thrust_In + datalen, thrust::placeholders::_1 < thrust_In[i]);
-        thrust_Out[i] = less_count + (dup_count - 1) / 2.0; 
-
-    }
-
-    return true;
-}
- 
-bool sort_by_idx1(float* dataIn ,float* dataOut,int* dataIdx,int datalen)
-{
-    thrust::device_ptr<float> thrust_In(dataIn);
-    thrust::device_ptr<int> thrust_Idx(dataIdx);
     
-    thrust::sequence(thrust_Idx,thrust_Idx+datalen);    
+
+}
+
+
+
+// __global__ void sumrank1(float* dataIn,float* dataOut,int* rankidx,const int datalen)
+// {
+//     int tid = blockIdx.x * blockDim.x + threadIdx.x;
+//    // __shared__ float s_rank[1024] ;
+//     if(tid<datalen)
+//     {
+//         int idxL=tid;
+//         int idxR=tid;
+//         while(idxL>0){
+//             if(dataIn[idxL]==dataIn[idxL-1])
+//             {
+//                 idxL--;
+//             }
+//             else
+//             {
+//                 break;
+//             }
+            
+//         }
+//         do
+//         {
+//             idxR++;
+//         }while (idxR<datalen&(dataIn[idxR]==dataIn[idxR-1]));
+//      //   s_rank[threadIdx.x]=1+idxL+float(idxR-idxL-1)/2;
+//     float tmp=1+idxL+float(idxR-idxL-1)/2;
+//     //输入输出不同，不需要sync  
+//       //  __syncthreads();
+//     //    dataOut[rankidx[tid]]=s_rank[threadIdx.x];
+//     int origin_id=rankidx[tid];
+//     dataOut[origin_id]=tmp;
+//     }
+
+// }
+
+
+
+// __global__ void sumrank(float* dataInOut,int* rankidx,const int datalen)
+// {
+//     int tid = blockIdx.x * blockDim.x + threadIdx.x;
+//    // __shared__ float s_rank[1024] ;
+//     if(tid<datalen)
+//     {
+//         int idxL=tid;
+//         int idxR=tid;
+//         while(idxL>0){
+//             if(dataInOut[idxL]==dataInOut[idxL-1])
+//             {
+//                 idxL--;
+//             }
+//             else
+//             {
+//                 break;
+//             }
+            
+//         }
+//         do
+//         {
+//             idxR+=1;
+//         }while (idxR<datalen&(dataInOut[idxR]==dataInOut[idxR-1]));
+//      //   s_rank[threadIdx.x]=1+idxL+float(idxR-idxL-1)/2;
+//     float tmp=1+idxL+float(idxR-idxL-1)/2;
+      
+//     __syncthreads();
+//     //    dataInOut[rankidx[tid]]=s_rank[threadIdx.x];
+//     int origin_id=rankidx[tid];
+//     dataInOut[origin_id]=tmp;
+//     }
+
+// }
+
+// bool rank_by_thurst(float* dataIn,float* dataOut,int datalen)
+// {
+//     thrust::device_ptr<float> thrust_In(dataIn);
+//     thrust::device_ptr<float> thrust_Out(dataOut);
+//     for(int i=0;i<datalen;i++)
+//     {
+//         float dup_count = thrust::count(thrust_In, thrust_In + datalen, thrust_In[i]);
+//         float less_count = thrust::count_if(thrust_In, thrust_In + datalen, thrust::placeholders::_1 < thrust_In[i]);
+//         thrust_Out[i] = less_count + (dup_count - 1) / 2.0; 
+
+//     }
+
+//     return true;
+// }
+ 
+// bool sort_by_idx1(float* dataIn ,float* dataOut,int* dataIdx,int datalen)
+// {
+//     thrust::device_ptr<float> thrust_In(dataIn);
+//     thrust::device_ptr<int> thrust_Idx(dataIdx);
+    
+//     thrust::sequence(thrust_Idx,thrust_Idx+datalen);    
    
 
   
-    thrust::sort_by_key(thrust_In,thrust_In+datalen,thrust_Idx);
+//     thrust::sort_by_key(thrust_In,thrust_In+datalen,thrust_Idx);
     
-   // cout<<" sumrank start"<<endl;
-    sumrank1<<<datalen/512+1,512>>>(dataIn,dataOut,dataIdx,datalen);
-   // cout<<" sumrank end"<<endl;
-    // thrust::device_ptr<float> thrust_Out(dataOut);
-    // for(int j=0;j<datalen;j++)
-    //     cout<<"data: "<<j<<" "<<thrust_Out[j]<<"idx："<<thrust_Idx[j]<<endl;
-   // for(int i=0;i<datalen;i++)
-    // {
-    //     cout<<"data: "<<thrust_InOut[i]<<endl;
-    //     //cout <<"idx："<<thrust_Idx[i]<<endl;
-    // }
-   // cout<<" sumrank1 end"<<endl;
+//    // cout<<" sumrank start"<<endl;
+//     sumrank1<<<datalen/512+1,512>>>(dataIn,dataOut,dataIdx,datalen);
+//    // cout<<" sumrank end"<<endl;
+//     // thrust::device_ptr<float> thrust_Out(dataOut);
+//     // for(int j=0;j<datalen;j++)
+//     //     cout<<"data: "<<j<<" "<<thrust_Out[j]<<"idx："<<thrust_Idx[j]<<endl;
+//    // for(int i=0;i<datalen;i++)
+//     // {
+//     //     cout<<"data: "<<thrust_InOut[i]<<endl;
+//     //     //cout <<"idx："<<thrust_Idx[i]<<endl;
+//     // }
+//    // cout<<" sumrank1 end"<<endl;
 
     
-    return true;
+//     return true;
 
-}
+// }
 
 
-bool sort_by_idx1(float* dataInOut ,int* dataIdx,int datalen)
-{
+// bool sort_by_idx1(float* dataInOut ,int* dataIdx,int datalen)
+// {
  
-    thrust::device_ptr<float> thrust_InOut(dataInOut);
-    thrust::device_ptr<int> thrust_Idx(dataIdx);
-    thrust::sequence(thrust_Idx,thrust_Idx+datalen);    
-    cout<<"seq end"<<std::endl;  
-    cout<<"start sort"<<endl;
-    thrust::sort_by_key(thrust_InOut,thrust_InOut+datalen,thrust_Idx);
-  //  cout<<"sort end"<<endl;
+//     thrust::device_ptr<float> thrust_InOut(dataInOut);
+//     thrust::device_ptr<int> thrust_Idx(dataIdx);
+//     thrust::sequence(thrust_Idx,thrust_Idx+datalen);    
+//     cout<<"seq end"<<std::endl;  
+//     cout<<"start sort"<<endl;
+//     thrust::sort_by_key(thrust_InOut,thrust_InOut+datalen,thrust_Idx);
+//   //  cout<<"sort end"<<endl;
    
-    // for(int i=0;i<datalen;i++)
-    // {
-    //     cout<<"data: "<<i<<" "<<thrust_InOut[i]<<"idx："<<thrust_Idx[i]<<endl;
-    // }
-    //get rank
-    sumrank<<<datalen/512+1,512>>>(dataInOut,dataIdx,datalen);
-    // for(int j=0;j<datalen;j++)
-    //     cout<<"data: "<<j<<" "<<thrust_InOut[j]<<"idx："<<thrust_Idx[j]<<endl;
+//     // for(int i=0;i<datalen;i++)
+//     // {
+//     //     cout<<"data: "<<i<<" "<<thrust_InOut[i]<<"idx："<<thrust_Idx[i]<<endl;
+//     // }
+//     //get rank
+//     sumrank<<<datalen/512+1,512>>>(dataInOut,dataIdx,datalen);
+//     // for(int j=0;j<datalen;j++)
+//     //     cout<<"data: "<<j<<" "<<thrust_InOut[j]<<"idx："<<thrust_Idx[j]<<endl;
         
 
-    // for(int i=0;i<datalen;i++)
-    // {
-    //     cout<<"data: "<<thrust_InOut[i]<<endl;
-    //     //cout <<"idx："<<thrust_Idx[i]<<endl;
-    // }
-    cout<<" sumrank end"<<endl;
+//     // for(int i=0;i<datalen;i++)
+//     // {
+//     //     cout<<"data: "<<thrust_InOut[i]<<endl;
+//     //     //cout <<"idx："<<thrust_Idx[i]<<endl;
+//     // }
+//     cout<<" sumrank end"<<endl;
   
 
-    cudaDeviceSynchronize();
-    return true;
-}
+//     cudaDeviceSynchronize();
+//     return true;
+// }
 
 
 bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, vector<uint32>& ctdiff, vector<uint32>& ctdidx)
@@ -404,20 +682,25 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     cudaMalloc((void**)&d_qry_line, qry_width * sizeof(float));
     cudaMalloc((void**)&d_qry_rank, qry_width * sizeof(float));
     //排序idx空间，暂定10000
-    int idx_len=10000;  
-    cudaMalloc((void**)&d_qry_idx_sample,idx_len*sizeof(int));
+    // int idx_len=10000;  
+    // cudaMalloc((void**)&d_qry_idx_sample,idx_len*sizeof(int));
     //create origin idx array on CPU and copy to GPU
-    h_qry_idx_sample=(int*)malloc(idx_len*sizeof(idx_len));
-    for (int i = 0; i < idx_len; ++i)
-    {
-        h_qry_idx_sample[i] = i;
-    }
-    CHECK(cudaMemcpyAsync(d_qry_idx_sample,h_qry_idx_sample,idx_len*sizeof(int),cudaMemcpyHostToDevice,stream));
+    // h_qry_idx_sample=(int*)malloc(idx_len*sizeof(idx_len));
+    // for (int i = 0; i < idx_len; ++i)
+    // {
+    //     h_qry_idx_sample[i] = i;
+    // }
+   // CHECK(cudaMemcpyAsync(d_qry_idx_sample,h_qry_idx_sample,idx_len*sizeof(int),cudaMemcpyHostToDevice,stream));
     //use idx sample to reset idx array on GPU
    
-    cudaMalloc((void**)&d_qry_idx_result,idx_len*sizeof(int));
-    cudaMalloc((void**)&d_qry_idx,idx_len*sizeof(int));
-    CHECK( cudaMalloc((void**)&d_ref_lines, 100000000 * sizeof(float)) );
+  //  cudaMalloc((void**)&d_qry_idx_result,idx_len*sizeof(int));
+  //  cudaMalloc((void**)&d_qry_idx,idx_len*sizeof(int));
+    
+    //h_genidx.size() <4096
+    ref_lines_width=4096;
+    CHECK(cudaMallocPitch((void**)&d_ref_lines,&pitch_ref_lines,ref_lines_width*sizeof(float),ref_height));
+   // CHECK( cudaMalloc((void**)&d_ref_lines, 100000000 * sizeof(float)) );
+    
     cudaMalloc((void**)&d_ref_rank, 100000000 * sizeof(float));
     cudaMalloc((void**)&d_score, 100000 * sizeof(float));
     cudaMalloc((void**)&d_ref_idx, 100000000 * sizeof(int));
@@ -436,6 +719,22 @@ __global__ void get_device_qry_line(uint32* gene_idx, float* qry, const uint32 l
     }
 }
 
+__global__ void get_device_ref_pitch(uint32* gene_idx, const uint32 gene_len,
+    uint32* cell_idx, const uint32 cell_len, float* ref, const uint32 ref_width, 
+    const uint32 ref_pitch,const uint32 ref_lines_width,const uint32 ref_lines_pitch , float* ref_lines)
+{
+    int nx = blockIdx.x * blockDim.x + threadIdx.x;
+    int ny = blockIdx.y * blockDim.y + threadIdx.y;
+    if (nx < cell_len && ny < gene_len)
+    {
+        float* row_head = (float*)((char*)ref + (uint64)(cell_idx[nx]) * ref_pitch);
+       // float* row_head_lines = (float*)((char*)ref_lines + (uint64)(cell_idx[nx]) * ref_lines_pitch);
+       float* row_head_lines = (float*)((char*)ref_lines + (uint64)(nx) * ref_lines_pitch);
+       row_head_lines[ny] = row_head[ref_width - gene_idx[ny] - 1];
+        
+    }
+}
+
 __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
     uint32* cell_idx, const uint32 cell_len, float* ref, const uint32 ref_width, 
     const uint32 ref_pitch, float* res)
@@ -449,22 +748,22 @@ __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
     }
 }
 
-__global__ void rankdata(float* qry, const uint32 len, float* res)
-{
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid < len)
-    {
-        float r = 1, s = 0;
-        for (int i = 0; i < len; ++i)
-        {
-            if (qry[tid] == qry[i])
-                s += 1;
-            else if (qry[tid] > qry[i])
-                r += 1;
-        }
-        res[tid] = r + float(s-1)/2;
-    }
-}
+// __global__ void rankdata(float* qry, const uint32 len, float* res)
+// {
+//     int tid = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (tid < len)
+//     {
+//         float r = 1, s = 0;
+//         for (int i = 0; i < len; ++i)
+//         {
+//             if (qry[tid] == qry[i])
+//                 s += 1;
+//             else if (qry[tid] > qry[i])
+//                 r += 1;
+//         }
+//         res[tid] = r + float(s-1)/2;
+//     }
+// }
 
 __global__ void spearman(float* qry, float* ref, const uint32 gene_num, const uint32 cell_num, float* score)
 {
@@ -552,13 +851,13 @@ vector<uint32> finetune_round(float* qry, vector<uint32> top_labels)
    // t1=clock();
    // time=(float)(t1-t0)/CLOCKS_PER_SEC;
    // cout<<"get uniq_genes time: "<<time<<endl;
-    // cout<<"uniq genes size: "<<uniq_genes.size()<<endl;
+  
     // t0=clock();
     vector<uint32> h_gene_idx(uniq_genes.begin(), uniq_genes.end());
     
     // transfer qry data from cpu to gpu
     CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
-    CHECK(cudaMemcpy(d_qry_idx,d_qry_idx_sample,10000*sizeof(int),cudaMemcpyDeviceToDevice));//copy oringin idx to current idx for sort
+//    CHECK(cudaMemcpy(d_qry_idx,d_qry_idx_sample,10000*sizeof(int),cudaMemcpyDeviceToDevice));//copy oringin idx to current idx for sort
     get_device_qry_line<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_gene_idx, qry, h_gene_idx.size(), qry_width, d_qry_line);
     //
 
@@ -575,15 +874,23 @@ vector<uint32> finetune_round(float* qry, vector<uint32> top_labels)
     // }
 
     // rank for qry line
-    sort_by_idx1(d_qry_line,d_qry_rank, d_qry_idx,h_gene_idx.size());
-   
+   // sort_by_idx1(d_qry_line,d_qry_rank, d_qry_idx,h_gene_idx.size());
+    rankdata<<<h_gene_idx.size()/1024 + 1, 1024>>>(d_qry_line, d_qry_rank, h_gene_idx.size());
+    
+
+    // thrust::device_ptr<float> dev_ptr(d_qry_rank);
+    // for (size_t i = 0; i < 10; i++)
+    // {
+    //     cout<<dev_ptr[i]<<" ";
+    // }
 
 
     
    // time=(float)(t1-t0)/CLOCKS_PER_SEC;
     // get filtered cells of ref data
-     cudaMemset(d_ref_lines, 0, 1000000 * sizeof(float));
-     cudaMemset(d_ref_rank, 0, 1000000 * sizeof(float));
+    cudaMemset2D(d_ref_lines,pitch_ref_lines,0, ref_lines_width *sizeof(float),ref_height);
+     //cudaMemset(d_ref_lines, 0, 1000000 * sizeof(float));
+    cudaMemset(d_ref_rank, 0, 1000000 * sizeof(float));
     
     vector<float> scores;
     //init cub buffer
@@ -599,12 +906,27 @@ vector<uint32> finetune_round(float* qry, vector<uint32> top_labels)
  
         uint32 pos = h_ctidx[label * 2];
         uint32 len = h_ctidx[label * 2 + 1];
-        
+       // cout<<" len: "<<len<<endl;
         dim3 blockDim(32, 32);
-        dim3 gridDim(len/32+1, h_gene_idx.size()/32+1);
-        get_device_ref_lines<<< gridDim, blockDim >>>
-            (d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, ref_width, pitchref, d_ref_lines);
+        dim3 gridDim((len-1)/32+1, (h_gene_idx.size()-1)/32+1);
+       // cout<<ref_lines_width<<endl;
+       // cout<<pitch_ref_lines<<endl;
 
+        get_device_ref_pitch<<<gridDim, blockDim>>>(d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, ref_width, pitchref,ref_lines_width,pitch_ref_lines,d_ref_lines);
+        err = cudaGetLastError();
+        if (err != cudaSuccess )
+        {
+            printf("get_device_ref_pitch CUDA Error: %s\n", cudaGetErrorString(err));
+        }   
+       // get_device_ref_lines<<< gridDim, blockDim >>>
+       //     (d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, ref_width, pitchref, d_ref_lines);
+        // get_device_ref_lines<<< gridDim, blockDim >>>
+        //     (d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, ref_width, pitchref, d_ref_lines);
+        // thrust::device_ptr<float> dev_ptr(d_ref_lines);
+        // for (size_t i = 0; i < 10; i++)
+        // {
+        //     cout<<dev_ptr[i]<<" ";
+        // }
         // float* d_unique ;
         // cudaMalloc((void**)&d_unique, h_gene_idx.size()*len*sizeof(float));
         // cudaMemcpy(d_unique, d_ref_lines, h_gene_idx.size()*len*sizeof(float), cudaMemcpyDeviceToDevice);
@@ -622,14 +944,26 @@ vector<uint32> finetune_round(float* qry, vector<uint32> top_labels)
         // cudaFree(d_unique);
         // rank for ref lines
       //  t0=clock();
-        //reset idx
-        rankdata_batch<<<len*h_gene_idx.size()/1024+1,1024>>>(d_ref_lines,d_ref_rank,h_gene_idx.size(),len);
-        cudaError_t err = cudaGetLastError();
+    
+
+ 
+        //shared memory 
+    
+        //rankdata_batch_s<<<(len*h_gene_idx.size()-1)/512+1,512>>>(d_ref_lines,d_ref_rank,h_gene_idx.size(),len);
+      // rankdata_batch<<<(len*h_gene_idx.size()-1)/512+1,512>>>(d_ref_lines,d_ref_rank,h_gene_idx.size(),len);
+       rankdata_pitch_batch<<<len,512>>>(d_ref_lines,d_ref_rank,h_gene_idx.size(),pitch_ref_lines,len);
+       // rankdata_batch_s_dynamic<<<(len*h_gene_idx.size()-1)/512+1,512,h_gene_idx.size()>>>(d_ref_lines,d_ref_rank,h_gene_idx.size(),step,len);    
+        err = cudaGetLastError();
         if (err != cudaSuccess )
         {
             printf("rankdata_batch CUDA Error: %s\n", cudaGetErrorString(err));
         }        
-
+        // for (int i = 0; i < len; i++)
+        // {
+        //     rankdata<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_ref_lines+i*h_gene_idx.size(), h_gene_idx.size(), d_ref_rank+i*h_gene_idx.size());
+      
+        // }
+        
         // thrust::device_ptr<float> tmprank(d_ref_rank);
         // for(int j=0;j<h_gene_idx.size();j++)
         // {
@@ -642,12 +976,7 @@ vector<uint32> finetune_round(float* qry, vector<uint32> top_labels)
         // }
         // getchar();
 
-        // for (int i = 0; i < len; i++)
-        // {
-        //     rankdata<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_ref_lines+i*h_gene_idx.size(), h_gene_idx.size(), d_ref_rank+i*h_gene_idx.size());
-      
-        // }
-        
+
         // CHECK(cudaMemcpy(d_qry_idx,d_qry_idx_sample,10000*sizeof(int),cudaMemcpyDeviceToDevice));
         // for(int batch=0;batch<len;batch++)
         // {
