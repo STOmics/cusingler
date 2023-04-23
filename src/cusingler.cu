@@ -400,7 +400,7 @@ __global__ void rankdata_batch(float* dataIn,float* dataOut,const int datalen,co
 
 }
 
-__global__ void rankdata_pitch_batch(float*dataIn,float* dataOut,const int datalen ,const int pitch,const int batch)
+__global__ void rankdata_pitch_batch(float*dataIn,float* dataOut,const int datalen ,const size_t pitch,const int batch)
 {
     __shared__ float s_data_line[4096];
     int step=(datalen-1)/blockDim.x+1;
