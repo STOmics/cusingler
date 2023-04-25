@@ -99,51 +99,80 @@ bool destroy()
 }
 
 
-__global__ void rankdata_pitch_batch_SMEM(float*dataIn,float* dataOut,const int datalen ,const size_t pitch,const int batch)
-{
-    __shared__ float s_data_line[4096];
-    int step=(datalen-1)/blockDim.x+1;
+// __global__ void rankdata_pitch_batch_SMEM(float*dataIn,float* dataOut,const int datalen ,const size_t pitch,const int batch)
+// {
+//     __shared__ float s_data_line[4096];
+//     int step=(datalen-1)/blockDim.x+1;
+//     int tid = blockIdx.x * blockDim.x + threadIdx.x;
+//     if(tid<datalen*batch)
+//     {
+        
+//         float equl_cnt=0;
+//         float less_cnt=1;
+//         //copy data to shared memory
+//         float* dataIn_batch=(float*)((char*)dataIn+blockIdx.x*pitch);
+//         for(int i=0;i<step;i++)
+//         {
+//             if(step*threadIdx.x+i<datalen)
+//             {
+//                 s_data_line[step*threadIdx.x+i]=dataIn_batch[step*threadIdx.x+i];
+                
+//             }
+//         }
+
+//         __syncthreads();
+//         //get rank
+//         for(int i=0;i<step;i++)
+//         {
+//             if(step*threadIdx.x+i<datalen)
+//             {
+//                 for(int j=0;j<datalen;j++)
+//                 {
+//                     if(s_data_line[j]<s_data_line[step*threadIdx.x+i])
+//                     {
+//                         less_cnt++;
+//                     }
+//                     else if(s_data_line[j]==s_data_line[step*threadIdx.x+i])
+//                     {
+//                         equl_cnt++;
+//                     }
+//                 }
+//             dataOut[blockIdx.x*datalen+step*threadIdx.x+i]=less_cnt+(equl_cnt-1)/2.0;
+//             }
+//         }
+
+//     }
+
+// }
+
+__global__ void rankdata_pitch(uint16* dataIn,float* dataOut,const int datalen,const size_t pitch,const int batch)
+{   //no shared memory
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if(tid<datalen*batch)
     {
-        
+        int batchid=tid/datalen;
         float equl_cnt=0;
         float less_cnt=1;
-        //copy data to shared memory
-        float* dataIn_batch=(float*)((char*)dataIn+blockIdx.x*pitch);
-        for(int i=0;i<step;i++)
+        uint16* dataIn_batch=(uint16*)((char*)dataIn+batchid*pitch);
+        for(int i=0;i<datalen;i++)
         {
-            if(step*threadIdx.x+i<datalen)
-            {
-                s_data_line[step*threadIdx.x+i]=dataIn_batch[step*threadIdx.x+i];
-                
-            }
-        }
 
-        __syncthreads();
-        //get rank
-        for(int i=0;i<step;i++)
-        {
-            if(step*threadIdx.x+i<datalen)
-            {
-                for(int j=0;j<datalen;j++)
+                if(dataIn_batch[tid]>dataIn_batch[i])
                 {
-                    if(s_data_line[j]<s_data_line[step*threadIdx.x+i])
-                    {
-                        less_cnt++;
-                    }
-                    else if(s_data_line[j]==s_data_line[step*threadIdx.x+i])
-                    {
-                        equl_cnt++;
-                    }
+                    less_cnt++;
                 }
-            dataOut[blockIdx.x*datalen+step*threadIdx.x+i]=less_cnt+(equl_cnt-1)/2.0;
-            }
+                else if(dataIn_batch[tid]==dataIn_batch[i])
+                {
+                    equl_cnt++;
+                }
+            
         }
-
+        dataOut[tid]=less_cnt+(equl_cnt-1)/2;
     }
-
 }
+
+
+
 __global__ void rankdata_pitch(float* dataIn,float* dataOut,const int datalen,const size_t pitch,const int batch)
 {   //no shared memory
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -170,6 +199,30 @@ __global__ void rankdata_pitch(float* dataIn,float* dataOut,const int datalen,co
     }
 }
 //for qry 1 line rank
+__global__ void rankdata(uint16* dataIn,float* dataOut,const int datalen)
+{
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if(tid<datalen)
+    {
+        float equl_cnt=0;
+        float less_cnt=1;
+        for(int i=0;i<datalen;i++)
+        {        
+                if(dataIn[tid]>dataIn[i])
+                {
+                    less_cnt++;
+                }
+                else if(dataIn[tid]==dataIn[i])
+                {
+                    equl_cnt++;
+                }
+            
+        }
+        dataOut[tid]=less_cnt+(equl_cnt-1)/2;
+    }
+
+}
+//
 __global__ void rankdata(float* dataIn,float* dataOut,const int datalen)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -308,8 +361,8 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
 
     CHECK(cudaStreamCreate(&stream));
    // cout<<"current stream"<<stream<<endl;
-    CHECK(cudaMallocPitch((void**)&d_ref,&pitchref,ref_width*sizeof(float),ref_height));
-    CHECK(cudaMallocPitch((void**)&d_qry,&pitchqry,qry_width*sizeof(float),qry_height));
+    CHECK(cudaMallocPitch((void**)&d_ref,&pitchref,ref_width*sizeof(uint16),ref_height));
+    CHECK(cudaMallocPitch((void**)&d_qry,&pitchqry,qry_width*sizeof(uint16),qry_height));
     cudaMalloc((void**)&d_ctids, ctids.size() * sizeof(uint32));
     // cudaMalloc((void**)&d_ctidx, ctidx.size() * sizeof(uint32));
     // cudaMalloc((void**)&d_ctdiff, ctdiff.size() * sizeof(uint32));
@@ -342,7 +395,7 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     
     //h_genidx.size() <4096
     ref_lines_width=4096;
-    CHECK(cudaMallocPitch((void**)&d_ref_lines,&pitch_ref_lines,ref_lines_width*sizeof(float),ref_height));
+    CHECK(cudaMallocPitch((void**)&d_ref_lines,&pitch_ref_lines,ref_lines_width*sizeof(uint16),ref_height));
 
     
     cudaMalloc((void**)&d_ref_rank, 100000000 * sizeof(float));
@@ -364,8 +417,30 @@ __global__ void get_device_qry_line(uint32* gene_idx, uint16* qry, const uint32 
     }
 }
 __global__ void get_device_ref_pitch(uint32* gene_idx, const uint32 gene_len,
-    uint32* cell_idx, const uint32 cell_len, float* ref, const uint32 ref_width, 
-    const uint32 ref_pitch,const uint32 ref_lines_width,const uint32 ref_lines_pitch , float* ref_lines)
+                                     uint32* cell_idx, const uint32 cell_len,
+                                     uint16* ref,                                     //ref
+                                     const uint32 ref_width, const uint32 ref_pitch, //ref
+                                     const uint32 ref_lines_width,const uint32 ref_lines_pitch , //reflines
+                                     uint16* ref_lines)
+{  
+    int nx = blockIdx.x * blockDim.x + threadIdx.x;
+    int ny = blockIdx.y * blockDim.y + threadIdx.y;
+    if (nx < cell_len && ny < gene_len)
+    {
+        uint16* row_head = (uint16*)((char*)ref + (uint64)(cell_idx[nx]) * ref_pitch);
+       // float* row_head_lines = (float*)((char*)ref_lines + (uint64)(cell_idx[nx]) * ref_lines_pitch);
+       uint16* row_head_lines = (uint16*)((char*)ref_lines + (uint64)(cell_idx[nx]) * ref_lines_pitch);
+       row_head_lines[ny]=row_head[gene_len-gene_idx[ny]-1];
+    }
+}
+
+
+__global__ void get_device_ref_pitch(uint32* gene_idx, const uint32 gene_len,
+                                     uint32* cell_idx, const uint32 cell_len,
+                                     float* ref,                                     //ref
+                                     const uint32 ref_width, const uint32 ref_pitch, //ref
+                                     const uint32 ref_lines_width,const uint32 ref_lines_pitch , //reflines
+                                     float* ref_lines)
 {
     int nx = blockIdx.x * blockDim.x + threadIdx.x;
     int ny = blockIdx.y * blockDim.y + threadIdx.y;
@@ -375,7 +450,7 @@ __global__ void get_device_ref_pitch(uint32* gene_idx, const uint32 gene_len,
        // float* row_head_lines = (float*)((char*)ref_lines + (uint64)(cell_idx[nx]) * ref_lines_pitch);
        float* row_head_lines = (float*)((char*)ref_lines + (uint64)(nx) * ref_lines_pitch);
        row_head_lines[ny] = row_head[ref_width - gene_idx[ny] - 1];
-        
+
     }
 }
 __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
@@ -524,29 +599,6 @@ __global__ void rankdata_bin3(uint16* qry, const uint32 cols, const uint32 rows,
     }
 }
 
-__global__ void spearman(float* qry, float* ref, const uint32 gene_num, const uint32 cell_num, float* score)
-{
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid < cell_num)
-    {
-        float mean = (gene_num+1)/2.0;
-        float sumxy = 0, sumxx = 0, sumyy = 0;
-        for (int i = 0; i < gene_num; ++i)
-        {
-            float x = qry[i] - mean;
-            float y = ref[tid * gene_num + i] - mean;
-            sumxy += x * y;
-            sumxx += x * x;
-            sumyy += y * y;
-        }
-        float divisor = sqrt(sumxx * sumyy);
-        if (divisor != 0)
-            score[tid] = sumxy / divisor;
-        else
-            score[tid] = CUDART_NAN_F;
-    }
-}
-
 __global__ void spearman_reduce(float* qry, float* ref, const uint32 gene_num, const uint32 cell_num, float* score)
 {
     int bid = blockIdx.x;
@@ -633,13 +685,8 @@ float percentile(vector<float> arr, int len, float p)
 
 vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
 {
-    clock_t t0,t1;
-    float time;
-    // get filtered genes
-    // cout<<"top_labels: ";
-    // for (auto& label : top_labels)
-    //     cout<<label<<" ";
-    // cout<<"\ntop label num: "<<top_labels.size() <<" ct_num: "<<ct_num<<endl;
+
+
     set<uint32> uniq_genes;
     int gene_thre = round(500 * pow((2/3.0), log2(top_labels.size())));
     // cout<<"gene_thre: "<<gene_thre<<endl;
@@ -771,8 +818,8 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
     // time=(float)(t1-t0)/CLOCKS_PER_SEC;
     // cout<<"rest etc : "<<time<<endl;
     return res;
+    }
 }
-
 vector<uint32> finetune()
 {
     Timer timer("ms");
