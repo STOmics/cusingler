@@ -10,6 +10,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 using namespace std;
 
 class Pipeline
@@ -21,6 +22,12 @@ public:
     bool work();
 
 private:
+    bool scale(vector<float>& src, const uint32 rows, const uint32 cols, vector<uint16>& dest);
+    bool filter_genes(vector<uint16>& src, const uint32 rows, const uint32 cols, set<uint32>& genes);
+    void filter();
+    void resort();
+
+private:
     InputData rawdata;
     vector<uint32> ctids;   // cell index of each cell type in ref data
     vector<uint32> ctidx;
@@ -29,4 +36,7 @@ private:
     vector<uint32> ctdidx;
 
     int label_num;
+
+    vector<uint16> ref;
+    vector<uint16> qry;
 };
