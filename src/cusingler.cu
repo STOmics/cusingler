@@ -173,31 +173,31 @@ __global__ void rankdata_pitch(uint16* dataIn,float* dataOut,const int datalen,c
 
 
 
-__global__ void rankdata_pitch(float* dataIn,float* dataOut,const int datalen,const size_t pitch,const int batch)
-{   //no shared memory
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if(tid<datalen*batch)
-    {
-        int batchid=tid/datalen;
-        float equl_cnt=0;
-        float less_cnt=1;
-        float* dataIn_batch=(float*)((char*)dataIn+batchid*pitch);
-        for(int i=0;i<datalen;i++)
-        {
+// __global__ void rankdata_pitch(float* dataIn,float* dataOut,const int datalen,const size_t pitch,const int batch)
+// {   //no shared memory
+//     int tid = blockIdx.x * blockDim.x + threadIdx.x;
+//     if(tid<datalen*batch)
+//     {
+//         int batchid=tid/datalen;
+//         float equl_cnt=0;
+//         float less_cnt=1;
+//         float* dataIn_batch=(float*)((char*)dataIn+batchid*pitch);
+//         for(int i=0;i<datalen;i++)
+//         {
 
-                if(dataIn_batch[tid]>dataIn_batch[i])
-                {
-                    less_cnt++;
-                }
-                else if(dataIn_batch[tid]==dataIn_batch[i])
-                {
-                    equl_cnt++;
-                }
+//                 if(dataIn_batch[tid]>dataIn_batch[i])
+//                 {
+//                     less_cnt++;
+//                 }
+//                 else if(dataIn_batch[tid]==dataIn_batch[i])
+//                 {
+//                     equl_cnt++;
+//                 }
             
-        }
-        dataOut[tid]=less_cnt+(equl_cnt-1)/2;
-    }
-}
+//         }
+//         dataOut[tid]=less_cnt+(equl_cnt-1)/2;
+//     }
+// }
 //for qry 1 line rank
 __global__ void rankdata(uint16* dataIn,float* dataOut,const int datalen)
 {
@@ -302,7 +302,7 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
 
     
     cudaMalloc((void**)&d_ref_rank, 100000000 * sizeof(float));
-    cudaMalloc((void**)&d_score, 100000 * sizeof(float));
+    cudaMalloc((void**)&d_score, 100000000 * sizeof(float));
 
     std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
 
@@ -322,7 +322,7 @@ __global__ void get_device_qry_line(uint32* gene_idx, uint16* qry, const uint32 
 
 __global__ void get_device_ref_pitch(uint32* gene_idx, const uint32 gene_len,
     uint32* cell_idx, const uint32 cell_len, uint16* ref, const uint32 ref_width, 
-    const uint32 ref_pitch,const uint32 ref_lines_width,const uint32 ref_lines_pitch , uint16* ref_lines)
+    const size_t ref_pitch,const uint32 ref_lines_width,const size_t ref_lines_pitch , uint16* ref_lines)
 {
     int nx = blockIdx.x * blockDim.x + threadIdx.x;
     int ny = blockIdx.y * blockDim.y + threadIdx.y;
@@ -600,21 +600,22 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
             printf("get_device_qry_line CUDA Error: %s\n", cudaGetErrorString(err));
         }     
     // get rank of qry data
+    // if mod0
     rankdata<<<h_gene_idx.size()/1024 + 1, 1024>>>(d_qry_line, d_qry_rank, h_gene_idx.size());
                err = cudaGetLastError();
         if (err != cudaSuccess )
         {
             printf("rank CUDA Error: %s\n", cudaGetErrorString(err));
         }     
-
-
+    // if mod1
+    //bin
+  
     vector<pair<size_t, size_t>> temp;
     size_t total_len = 0;
-        for (auto& label : top_labels)
+    for (auto& label : top_labels)
     {
         uint32 pos = h_ctidx[label * 2];
         uint32 len = h_ctidx[label * 2 + 1];
-        
         // cout<<label<<" "<<pos<<" "<<len<<endl;
         if (temp.empty() || (temp.back().first + temp.back().second) != pos)
         {
@@ -627,119 +628,101 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
             total_len += len;
         }
     }
-
     vector<uint32> h_cell_idx(total_len);
     total_len = 0;
-
-    for (auto &[pos,len] : temp)
+    //for (auto& [pos, len] : temp)
+    for(auto&tmp:temp)
     {
+        size_t pos=tmp.first;
+        size_t len=tmp.second;
         std::iota(h_cell_idx.begin()+total_len, h_cell_idx.begin()+total_len+len, pos);
-
+        // cout<<total_len<<" "<<total_len+len<<" "<<pos<<endl;
         total_len += len;
     }
-    // for (auto& label : top_labels)
-    // {
+    CHECK(cudaMemcpy(d_cell_idx, h_cell_idx.data(), h_cell_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
+    dim3 blockDim(1, 512);
+    dim3 gridDim(h_cell_idx.size(), (h_gene_idx.size()-1)/512+1);
+    get_device_ref_pitch<<<gridDim,blockDim>>>(d_gene_idx,h_gene_idx.size(),d_cell_idx,h_cell_idx.size(),
+                                                d_ref,ref_width,pitchref,
+                                                ref_lines_width,pitch_ref_lines,d_ref_lines);
+    CHECK(cudaGetLastError());
+
+    //if mod 0
+    cout<<"h_gene_idx.size()"<<h_gene_idx.size()<<endl;
+    cout<<"total_len"<<total_len;
+    getchar()   ;
+    // uint16* row_head = (uint16*)((char*)d_ref_lines +  pitch_ref_lines);
       
+    // thrust::device_ptr<uint16> dev_ptr0(row_head);
+    //     for(int i=0;i<h_gene_idx.size();i++)
+    // {   
+    //     cout<<dev_ptr0[i]<<" ";               
+    // }
+    // getchar()   ; 
+    dim3 gridDim0(h_cell_idx.size(), (h_gene_idx.size()-1)/512+1);
+    rankdata_pitch<<<h_cell_idx.size(),512>>>(d_ref_lines,d_ref_rank,h_gene_idx.size(),pitch_ref_lines,h_cell_idx.size());
+    CHECK(cudaGetLastError());
+    
+    // thrust::device_ptr<float> dev_ptr(d_score);
+    //    for(int i=0;i<h_gene_idx.size();i++)
+    // {
+    // cout<<dev_ptr[i]<<" ";
+    // }
+    // getchar()   ;
+    thrust::device_ptr<float> dev_ptr2(d_ref_rank);
+    thrust::device_ptr<float> dev_ptr3(d_qry_rank);
  
-    //     uint32 pos = h_ctidx[label * 2];
-    //     uint32 len = h_ctidx[label * 2 + 1];
+    for(int i=0;i<h_gene_idx.size()*3;i++)
+    {   
+        cout<<dev_ptr2[i]<<" ";               
+    }
+    getchar()   ;
+    for(int i=0;i<h_gene_idx.size();i++)
+    {   
+        cout<<dev_ptr3[i]<<" ";               
+    }
+    getchar()   ;
+    //if mod 1
+    //bin
 
+     //spearman
+    spearman_reduce<<< total_len, 128 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
 
+ cudaError_t err = cudaGetLastError();
+ if( err != cudaSuccess) std::cout << "Error: " << cudaGetErrorString(err) << std::endl;  CHECK(cudaGetLastError());
 
-
-    //    // cout<<" len: "<<len<<endl;
-    //     dim3 blockDim(32, 32);
-    //     dim3 gridDim((len-1)/32+1, (h_gene_idx.size()-1)/32+1);
-   
-    //     cout<<"refwidth"<<ref_width<<endl;
-    //     cout<<"pitchref"<<pitchref<<endl;
-    //     cout<<"ref_lines_width"<<ref_lines_width<<endl;
-    //     cout<<"pitch_ref_lines"<<pitch_ref_lines<<endl;
-    //     getchar();
-    //     get_device_ref_pitch<<<gridDim, blockDim>>>(d_gene_idx, h_gene_idx.size(), d_ctids+pos, len, d_ref, ref_width, pitchref,ref_lines_width,pitch_ref_lines,d_ref_lines);
-    //     err = cudaGetLastError();
-    //     if (err != cudaSuccess )
-    //     {
-    //         printf("get_device_ref_pitch CUDA Error: %s\n", cudaGetErrorString(err));
-    //     }   
-    // thrust::device_ptr<uint16> dev_ptr4(d_ref_lines);
-    // for (size_t i = 0; i < h_gene_idx.size(); i++)
-    // {
-    //     cout<<dev_ptr4[i]<<" ";
-    // }     
-    // //*****************rank data
-    // getchar();
-    // rankdata_pitch<<<len,512>>>(d_ref_lines,d_ref_rank,h_gene_idx.size(),pitch_ref_lines,len);
-    //     //rankdata_pitch_batch_SMEM<<<len,512>>>(d_ref_lines,d_ref_rank,h_gene_idx.size(),pitch_ref_lines,len);
-  
-    //     err = cudaGetLastError();
-    //     if (err != cudaSuccess )
-    //     {
-    //         printf("rankdata_batch CUDA Error: %s\n", cudaGetErrorString(err));
-    //     }        
-
-    // thrust::device_ptr<float> dev_ptr3(d_ref_rank);
-    // for (size_t i = 0; i < h_gene_idx.size(); i++)
-    // {
-    //     cout<<dev_ptr3[i]<<" ";
-    // }   
-    // //*****************rank data 
-    //     // spearman
-    //     // cudaMemset(d_score, 0, 1000 * sizeof(float));
-    //     // spearman<<< total_len/128 + 1, 128 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
-    //     // dim3 blockDim(16, 16);
-    //     // dim3 gridDim(h_cell_idx.size(), h_gene_idx.size()/512+1);
-    //     cout<<"total_len"<<total_len<<endl;
-    //     getchar();
-
-    //     spearman_reduce<<< total_len, 128 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
-
-    //     vector<float> h_score;
-    //     h_score.resize(total_len, 0);
-    //     cudaMemcpy(h_score.data(), d_score, total_len*sizeof(float), cudaMemcpyDeviceToHost);
-    //     // cout<<"score len: "<<len<<endl;
-    //     // if (scores.size() == 1)
-    //     // {
-    //     //     auto ele = std::minmax_element(h_score.begin(), h_score.end());
-    //     //     cout<<"ele: "<<*ele.first<<" "<<*ele.second<<endl;
-    //     // }
-    //     // if (label == 3)
-    //     // {
-    //     //     for (int i = 0; i < total_len; ++i)
-    //     //         cout<<h_score[i]<<" ";
-    //     //     cout<<endl;
-    //     // }
-    // uint32 start = 0;
-    // total_len = 0;
-    // vector<float> scores;
-    // for (auto& label : top_labels)
-    // {
-    //     uint32 len = h_ctidx[label * 2 + 1];
-    //     total_len += len;
+    vector<float> h_score;
+    h_score.resize(total_len, 0);
+    cudaMemcpy(h_score.data(), d_score, total_len*sizeof(float), cudaMemcpyDeviceToHost);
+    uint32 start = 0;
+    total_len = 0;
+    vector<float> scores;
+    for (auto& label : top_labels)
+    {
+        uint32 len = h_ctidx[label * 2 + 1];
+        total_len += len;
         
-    //     vector<float> tmp(h_score.begin()+start, h_score.begin()+total_len);
-    //     float score = percentile(tmp, len, 0.8);
-    //     // cout<<label<<" score: "<<score<<endl;
-    //     scores.push_back(score);
-    //     start += len;
-    //     // cudaMemset(d_ref_lines, 0, h_gene_idx.size() * len * sizeof(float));
-    // }
+        vector<float> tmp(h_score.begin()+start, h_score.begin()+total_len);
+        float score = percentile(tmp, len, 0.8);
+        // cout<<label<<" score: "<<score<<endl;
+        scores.push_back(score);
+        start += len;
+        // cudaMemset(d_ref_lines, 0, h_gene_idx.size() * len * sizeof(float));
+    } 
 
-    // auto ele = std::minmax_element(scores.begin(), scores.end());
-    // float thre = *ele.second - 0.05;
-    // vector<uint32> res;
-    // for (uint32 i = 0; i < scores.size(); ++i)
-    // {
-    //     if (scores[i] <= *ele.first || scores[i] < thre) continue;
-    //     else res.push_back(top_labels[i]);
-    // }
-    // if (res.empty())
-    //     res.push_back(top_labels.front());
-    // // t1=clock();
-    // // time=(float)(t1-t0)/CLOCKS_PER_SEC;
-    // // cout<<"rest etc : "<<time<<endl;
-    // return res;
-    // }
+    auto ele = std::minmax_element(scores.begin(), scores.end());
+    float thre = *ele.second - 0.05;
+    vector<uint32> res;
+    for (uint32 i = 0; i < scores.size(); ++i)
+    {
+        if (scores[i] <= *ele.first || scores[i] < thre) continue;
+        else res.push_back(top_labels[i]);
+    }
+    if (res.empty())
+        res.push_back(top_labels.front());
+
+    return res;
+
 }
 vector<uint32> finetune()
 {
