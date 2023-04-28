@@ -19,9 +19,10 @@ public:
     Pipeline(string filename);
     ~Pipeline() {};
     bool preprocess();
-    bool work();
+    bool work(int mod);
 
 private:
+   // bool score_data();
     bool scale(vector<float>& src, const uint32 rows, const uint32 cols, vector<uint16>& dest);
     bool filter_genes(vector<uint16>& src, const uint32 rows, const uint32 cols, set<uint32>& genes);
     void filter();

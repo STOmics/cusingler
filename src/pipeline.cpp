@@ -16,6 +16,11 @@
 #include <cassert>
 using namespace std;
 
+// bool Pipeline::score_data()
+// {
+//     //todo
+// }
+
 bool Pipeline::scale(vector<float>& src, const uint32 rows, const uint32 cols, vector<uint16>& dest)
 {
     dest.resize(src.size(), 0);
@@ -329,10 +334,19 @@ bool Pipeline::preprocess()
     return true;
 }
 
-bool Pipeline::work()
+bool Pipeline::work(int mod)
 {
-    
-    
+    if(mod == 0)
+        cout<<"rank by bin"<<endl;
+    else if (mod==1)
+    {
+        cout<<"rank by cnt"<<endl;
+    }
+    else
+    {
+        cerr<<"invalid mod."<<endl;
+        exit(-1);
+    }
     cout<<"work()"<<endl;
 
     init();
@@ -341,7 +355,7 @@ bool Pipeline::work()
     copyin(rawdata, ctids, ctidx, ctdiff, ctdidx, ref, qry);
 
     Timer timer("ms");
-    auto res = finetune();
+    auto res = finetune(mod);
     cout<<"finetune cost time(ms): "<<timer.toc()<<endl;
 
     unordered_map<uint32, uint32> m;

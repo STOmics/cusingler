@@ -297,10 +297,11 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     cudaMalloc((void**)&d_qry_rank, qry_width * sizeof(float));
     
     //h_genidx.size() <4096
-    ref_lines_width=4096;
-    CHECK(cudaMallocPitch((void**)&d_ref_lines,&pitch_ref_lines,ref_lines_width*sizeof(uint16),ref_height));
 
-                                    
+    // ref_lines_width=4096;
+    // CHECK(cudaMallocPitch((void**)&d_ref_lines,&pitch_ref_lines,ref_lines_width*sizeof(uint16),ref_height));
+
+    CHECK(cudaMalloc((void**)&d_ref_lines, 200000000 * sizeof(uint16));)                               
     cudaMalloc((void**)&d_ref_rank, 200000000 * sizeof(float));
     cudaMalloc((void**)&d_score,100000* sizeof(float));
 
@@ -335,7 +336,18 @@ __global__ void get_device_ref_pitch(uint32* gene_idx, const uint32 gene_len,
         
     }
 }
-
+__global__ void get_device_ref_lines(const uint32* gene_idx, const uint32 gene_len,
+    const uint32* cell_idx, const uint32 cell_len, uint16* ref, const uint32 ref_width, 
+    const uint64 ref_pitch, uint16* res)
+{
+    int nx = blockIdx.x * blockDim.x + threadIdx.x;
+    int ny = blockIdx.y * blockDim.y + threadIdx.y;
+    if (ny < gene_len)
+    {
+        uint16* row_head = (uint16*)((char*)ref + cell_idx[nx] * ref_pitch);
+        res[nx * gene_len + ny] = row_head[ref_width - gene_idx[ny] - 1];
+    }
+}
 __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
     uint32* cell_idx, const uint32 cell_len, float* ref, const uint32 ref_width, 
     const uint32 ref_pitch, float* res)
@@ -366,6 +378,41 @@ __global__ void rankdata(uint16* qry, const uint32 len, float* res)
         res[tid] = r + float(s-1)/2;
     }
 }
+/*
+    datain : ref
+    dataout: ref_rank
+    datalen: gene_len
+    batch: cell_len
+*/
+__global__ void rankdata_batch(uint16* dataIn,float* dataOut,const int datalen,const int batch)
+{
+
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if(tid<datalen*batch)
+    {
+        int batchid=tid/datalen;
+        int equl_cnt=0;
+        int less_cnt=1;
+        for(int i=0;i<datalen;i++)
+        {
+            
+            
+                if(dataIn[tid]>dataIn[batchid*datalen+i])
+                {
+                    less_cnt++;
+                }
+                else if(dataIn[tid]==dataIn[batchid*datalen+i])
+                {
+                    equl_cnt++;
+                }
+            
+        }
+        dataOut[tid]=less_cnt+(float)(equl_cnt-1)/2;
+    }
+
+}
+
+
 
 // basic rankdata method using bincount
 __global__ void rankdata_bin(uint16* qry, const uint32 cols, const uint32 rows, float* res)
@@ -616,7 +663,7 @@ float percentile(vector<float> arr, int len, float p)
     return res;
 }
 
-vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
+vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int mod)
 {
 
 
@@ -649,16 +696,13 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
         {
             printf("get_device_qry_line CUDA Error: %s\n", cudaGetErrorString(err));
         }     
-    // get rank of qry data
-    // if mod0
-    rankdata<<<h_gene_idx.size()/1024 + 1, 1024>>>(d_qry_line, d_qry_rank, h_gene_idx.size());
+    // get rank of qry data   
+    rankdata<<<(h_gene_idx.size()-1)/1024 + 1, 1024>>>(d_qry_line, d_qry_rank, h_gene_idx.size());
                err = cudaGetLastError();
         if (err != cudaSuccess )
         {
-            printf("rank CUDA Error: %s\n", cudaGetErrorString(err));
+            printf("qry rank CUDA Error: %s\n", cudaGetErrorString(err));
         }     
-    // if mod1
-    //bin
   
     vector<pair<size_t, size_t>> temp;
     size_t total_len = 0;
@@ -694,9 +738,12 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
     // dim3 gridDim((h_cell_idx.size()-1)/32+1, (h_gene_idx.size()-1)/32+1);
     dim3 blockDim(1, 512);
     dim3 gridDim(h_cell_idx.size(), h_gene_idx.size()/512+1);
-    get_device_ref_pitch<<<gridDim,blockDim>>>(d_gene_idx,h_gene_idx.size(),d_cell_idx,h_cell_idx.size(),
-                                                d_ref,ref_width,pitchref,
-                                                ref_lines_width,pitch_ref_lines,d_ref_lines);
+    get_device_ref_lines<<< gridDim, blockDim >>>
+            (d_gene_idx, h_gene_idx.size(), d_cell_idx, h_cell_idx.size(), d_ref, ref_width, (uint64)pitchref, d_ref_lines);
+
+    // get_device_ref_pitch<<<gridDim,blockDim>>>(d_gene_idx,h_gene_idx.size(),d_cell_idx,h_cell_idx.size(),
+    //                                             d_ref,ref_width,pitchref,
+    //                                             ref_lines_width,pitch_ref_lines,d_ref_lines);
     CHECK(cudaGetLastError());
 
     //if mod 0
@@ -709,13 +756,26 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
     //     cout<<dev_ptr0[i]<<" ";               
     // }
     // getchar()   ; 
-     rankdata_bin3_pitch<<< total_len, 64>>>(d_ref_lines,pitch_ref_lines ,h_gene_idx.size(), total_len, d_ref_rank);
+
+    if(mod==0)
+    {
+        rankdata_bin3<<< total_len, 64>>>(d_ref_lines, h_gene_idx.size(), total_len, d_ref_rank);
         err = cudaGetLastError();
         if (err != cudaSuccess )
         {
             printf("rankdata_bin3 CUDA Error: %s\n", cudaGetErrorString(err));
         }
-    
+    }
+    else if(mod==1)
+    {
+        //len=h_cell_idx.size()
+        rankdata_batch<<<(h_cell_idx.size()*h_gene_idx.size()-1)/512+1,512>>>(d_ref_lines,d_ref_rank,h_gene_idx.size(),h_cell_idx.size());
+        err = cudaGetLastError();
+        if (err != cudaSuccess )
+        {
+            printf("rankdata_batch CUDA Error: %s\n", cudaGetErrorString(err));
+        }
+    }
     // thrust::device_ptr<float> dev_ptr(d_score);
     //    for(int i=0;i<h_gene_idx.size();i++)
     // {
@@ -723,12 +783,12 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
     // }
     // getchar()   ;
     // thrust::device_ptr<float> dev_ptr3(d_qry_rank);
-   // thrust::device_ptr<float> dev_ptr2(d_ref_rank);
-    // for(int i=0;i<h_gene_idx.size()*3;i++)
-    // {   
-    //     cout<<dev_ptr2[i]<<" ";               
-    // }
-    // getchar()   ;
+//    thrust::device_ptr<float> dev_ptr2(d_ref_rank);
+//     for(int i=0;i<h_gene_idx.size()*3;i++)
+//     {   
+//         cout<<dev_ptr2[i]<<" ";               
+//     }
+//     getchar()   ;
     // for(int i=0;i<h_gene_idx.size();i++)
     // {   
     //     cout<<dev_ptr3[i]<<" ";               
@@ -778,14 +838,13 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels)
     return res;
 
 }
-vector<uint32> finetune()
+vector<uint32> finetune(int mod)
 {
     Timer timer("ms");
     // process each cell
     vector<uint32> res;
     cout<<"cell num:"<<qry_height<<endl;
-    // clock_t startT,endT;
-    // float timecell;
+
     // for (int i = 0; i < 1; ++i)
     //for (int i = 26; i < 27; ++i)
     for (int i = 0; i < qry_height; ++i)
@@ -793,6 +852,7 @@ vector<uint32> finetune()
         uint16* qry_head = (uint16*)((char*)d_qry + i * pitchqry);
 
         vector<uint32> top_labels;
+        
         uint32 start = i * ct_num;
         for (int pos = 0; pos < ct_num; ++pos)
         {
@@ -803,7 +863,7 @@ vector<uint32> finetune()
         while (top_labels.size() > 1)
         {
            // cout<<"top_labels size"<<top_labels.size()<<endl;
-            top_labels = finetune_round(qry_head, top_labels);
+            top_labels = finetune_round(qry_head, top_labels,mod);
             // for (auto& label : top_labels)
             //     cout<<label<<endl;
         }
