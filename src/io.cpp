@@ -1,8 +1,8 @@
 /* Copyright (C) BGI-Reasearch - All Rights Reserved
-* Unauthorized copying of this file, via any medium is strictly prohibited
-* Proprietary and confidential
-* Written by STOmics development team P_stomics_dev@genomics.cn, 2023
-*/
+ * Unauthorized copying of this file, via any medium is strictly prohibited
+ * Proprietary and confidential
+ * Written by STOmics development team P_stomics_dev@genomics.cn, 2023
+ */
 
 #include "io.h"
 
@@ -19,14 +19,14 @@ bool readObs(H5File* file, InputData& data)
     // StrType str_type(PredType::C_S1, H5T_VARIABLE);
     // str_type.setCset(H5T_CSET_UTF8);
 
-    DataSet dataset = DataSet(file->openDataSet("/obs_key"));
-    auto   datatype   = dataset.getDataType();
+    DataSet   dataset   = DataSet(file->openDataSet("/obs_key"));
+    auto      datatype  = dataset.getDataType();
     DataSpace dataspace = dataset.getSpace();
-    hsize_t dims[1];
+    hsize_t   dims[1];
     dataspace.getSimpleExtentDims(dims, NULL);
     char* obs_key[dims[0]];
     dataset.read(obs_key, datatype);
-   
+
     dataset = DataSet(file->openDataSet("/obs_value"));
     char* obs_value[dims[0]];
     dataset.read(&obs_value[0], datatype);
@@ -38,7 +38,7 @@ bool readObs(H5File* file, InputData& data)
         data.obs_values.push_back(obs_value[i]);
     }
 
-    cout<<"obs size: "<<data.obs_keys.size()<<endl;
+    cout << "obs size: " << data.obs_keys.size() << endl;
     // for (auto&[k, v] : data.obs)
     //     cout<<k<<" "<<v<<endl;
 
@@ -49,11 +49,11 @@ bool readRef(H5File* file, InputData& data)
 {
     auto& ref = data.ref;
 
-    DataSet dataset = DataSet(file->openDataSet("/ref"));
-    auto   datatype   = dataset.getDataType();
+    DataSet   dataset   = DataSet(file->openDataSet("/ref"));
+    auto      datatype  = dataset.getDataType();
     DataSpace dataspace = dataset.getSpace();
-    int rank = dataspace.getSimpleExtentNdims();
-    hsize_t dims[rank];
+    int       rank      = dataspace.getSimpleExtentNdims();
+    hsize_t   dims[rank];
     dataspace.getSimpleExtentDims(dims, NULL);
 
     size_t ref_size = 1;
@@ -64,7 +64,7 @@ bool readRef(H5File* file, InputData& data)
 
     data.ref_cell_num = dims[0];
     data.ref_gene_num = dims[1];
-    cout<<"ref size: "<<ref.size()<<" "<<dims[0]<<" x "<<dims[1]<<endl;
+    cout << "ref size: " << ref.size() << " " << dims[0] << " x " << dims[1] << endl;
 
     return true;
 }
@@ -73,11 +73,11 @@ bool readTest(H5File* file, InputData& data)
 {
     auto& test = data.test;
 
-    DataSet dataset = DataSet(file->openDataSet("/test"));
-    auto   datatype   = dataset.getDataType();
+    DataSet   dataset   = DataSet(file->openDataSet("/test"));
+    auto      datatype  = dataset.getDataType();
     DataSpace dataspace = dataset.getSpace();
-    int rank = dataspace.getSimpleExtentNdims();
-    hsize_t dims[rank];
+    int       rank      = dataspace.getSimpleExtentNdims();
+    hsize_t   dims[rank];
     dataspace.getSimpleExtentDims(dims, NULL);
 
     size_t test_size = 1;
@@ -88,7 +88,7 @@ bool readTest(H5File* file, InputData& data)
 
     data.test_cell_num = dims[0];
     data.test_gene_num = dims[1];
-    cout<<"test size: "<<test.size()<<" "<<dims[0]<<" x "<<dims[1]<<endl;
+    cout << "test size: " << test.size() << " " << dims[0] << " x " << dims[1] << endl;
 
     return true;
 }
@@ -97,11 +97,11 @@ bool readLabels(H5File* file, InputData& data)
 {
     auto& labels = data.labels;
 
-    DataSet dataset = DataSet(file->openDataSet("/tmp"));
-    auto   datatype   = dataset.getDataType();
+    DataSet   dataset   = DataSet(file->openDataSet("/tmp"));
+    auto      datatype  = dataset.getDataType();
     DataSpace dataspace = dataset.getSpace();
-    int rank = dataspace.getSimpleExtentNdims();
-    hsize_t dims[rank];
+    int       rank      = dataspace.getSimpleExtentNdims();
+    hsize_t   dims[rank];
     dataspace.getSimpleExtentDims(dims, NULL);
 
     size_t test_size = 1;
@@ -110,10 +110,11 @@ bool readLabels(H5File* file, InputData& data)
     labels.resize(test_size);
     dataset.read(&labels[0], datatype);
 
-    cout<<"labels size: "<<labels.size()<<" "<<dims[0]<<" x "<<dims[1]<<endl;
+    cout << "labels size: " << labels.size() << " " << dims[0] << " x " << dims[1]
+         << endl;
 
     Attribute attr(dataset.openAttribute("order"));
-    datatype = attr.getDataType();
+    datatype  = attr.getDataType();
     dataspace = attr.getSpace();
     dataspace.getSimpleExtentDims(dims, NULL);
     char* orders[dims[0]];
@@ -123,38 +124,37 @@ bool readLabels(H5File* file, InputData& data)
     {
         data.celltypes.push_back(orders[i]);
     }
-    cout<<"celltypes size: "<<data.celltypes.size()<<endl;
+    cout << "celltypes size: " << data.celltypes.size() << endl;
 
     return true;
 }
 
-
-
 bool readTrained(H5File* file, InputData& data)
 {
     // aux function for traveling datasets of '/trained'
-    auto file_info = [](hid_t loc_id, const char *name, const H5L_info_t *linfo, void *opdata)
+    auto file_info =
+        [](hid_t loc_id, const char* name, const H5L_info_t* linfo, void* opdata)
     {
         auto dataset = H5Dopen2(loc_id, name, H5P_DEFAULT);
-        auto ids = reinterpret_cast< vector<string>* >(opdata);
+        auto ids     = reinterpret_cast< vector< string >* >(opdata);
         ids->push_back(name);
         H5Dclose(dataset);
         return 0;
     };
-    vector<string> ids;
-    Group group = Group(file->openGroup("/trained"));
+    vector< string > ids;
+    Group            group = Group(file->openGroup("/trained"));
     H5Literate(group.getId(), H5_INDEX_NAME, H5_ITER_INC, NULL, file_info, &ids);
 
     auto& trained = data.trained;
     for (auto& id : ids)
     {
-        vector<double> aux_list;
+        vector< double > aux_list;
 
-        DataSet dataset = DataSet(group.openDataSet(id));
-        auto   datatype   = dataset.getDataType();
+        DataSet   dataset   = DataSet(group.openDataSet(id));
+        auto      datatype  = dataset.getDataType();
         DataSpace dataspace = dataset.getSpace();
-        int rank = dataspace.getSimpleExtentNdims();
-        hsize_t dims[rank];
+        int       rank      = dataspace.getSimpleExtentNdims();
+        hsize_t   dims[rank];
         dataspace.getSimpleExtentDims(dims, NULL);
 
         size_t test_size = 1;
@@ -163,10 +163,10 @@ bool readTrained(H5File* file, InputData& data)
         aux_list.resize(test_size);
         dataset.read(&aux_list[0], datatype);
 
-        trained.insert({id, aux_list});
+        trained.insert({ id, aux_list });
     }
-        
-    cout<<"trained data size: "<<trained.size()<<endl;
+
+    cout << "trained data size: " << trained.size() << endl;
 
     return true;
 }
@@ -196,5 +196,3 @@ bool readInput(string& filename, InputData& data)
 
     return true;
 }
-
-
