@@ -5,10 +5,14 @@
  */
 
 #include "io.h"
+#include "timer.h"
 
 #include <iostream>
 #include <string>
 #include <vector>
+#include <map>
+#include <algorithm>
+#include <cmath>
 using namespace std;
 
 #include "H5Cpp.h"
@@ -65,6 +69,12 @@ bool readRef(H5File* file, InputData& data)
     data.ref_cell_num = dims[0];
     data.ref_gene_num = dims[1];
     cout << "ref size: " << ref.size() << " " << dims[0] << " x " << dims[1] << endl;
+
+    // map<float, uint32> m;
+    // for (auto& f : ref)
+    //     m[f]++;
+    // for (auto& [k,v] : m)
+    //     cout<<"old: "<<k<<" "<<v<<endl;
 
     return true;
 }
@@ -197,47 +207,191 @@ bool readInput(string& filename, InputData& data)
     return true;
 }
 
-
-bool loadRefMatrix(H5File* file)
+template<typename T>
+vector<T> getDataset(Group& group, string name)
 {
-    DataSet   dataset   = DataSet(file->openDataSet("/X"));
-    Attribute attr(dataset.openAttribute("order"));
-    auto datatype  = attr.getDataType();
-    vector<uint32> shapes(2, 0);
-    attr.read(datatype, shapes.data());
-    uint32 height = shapes[0];
-    uint32 width = shapes[1];
-    cout<<"Ref shape: "<<height<<" x "<<width<<endl;
+    auto   dataset   = DataSet(group.openDataSet(name.c_str()));
+    auto      datatype  = dataset.getDataType();
+    auto dataspace = dataset.getSpace();
+    int       rank      = dataspace.getSimpleExtentNdims();
+    hsize_t   dims[rank];
+    dataspace.getSimpleExtentDims(dims, NULL);
 
-    
-    // DataSet   dataset   = DataSet(file->openDataSet("/X/data"));
-    // auto      datatype  = dataset.getDataType();
-    // DataSpace dataspace = dataset.getSpace();
-    // int       rank      = dataspace.getSimpleExtentNdims();
-    // hsize_t   dims[rank];
-    // dataspace.getSimpleExtentDims(dims, NULL);
+    uint64 size = dims[0];
+    vector<T> data;
+    data.resize(size);
+    dataset.read(data.data(), datatype);
 
-    // size_t test_size = 1;
-    // for (int i = 0; i < rank; ++i)
-    //     test_size *= dims[i];
-    // labels.resize(test_size);
-    // dataset.read(&labels[0], datatype);
+    cout<<"data size: "<<data.size()<<endl;
+    return data;
+}
 
-    // cout << "labels size: " << labels.size() << " " << dims[0] << " x " << dims[1]
-    //      << endl;
+bool DataParser::loadRefMatrix()
+{
+    // Open h5 file handle
+    H5File* file = new H5File(ref_file.c_str(), H5F_ACC_RDONLY);
+
+    // Load matrix data and shape
+    {
+        auto group(file->openGroup("/X"));
+
+        Attribute attr(group.openAttribute("shape"));
+        auto datatype  = attr.getDataType();
+        vector<uint64> shapes(2, 0);
+        attr.read(datatype, shapes.data());
+        ref_height = shapes[0];
+        ref_width = shapes[1];
+        cout<<"Ref shape: "<<ref_height<<" x "<<ref_width<<endl;
+
+        ref_data = getDataset<float>(group, "data");
+        ref_indices = getDataset<int>(group, "indices");
+        ref_indptr = getDataset<int>(group, "indptr");
+    }
+
+    // Load celltypes of per cell
+    {
+        auto group(file->openGroup("/obs/ClusterName"));
+
+        celltype_codes = getDataset<uint8>(group, "codes");
+        uniq_celltypes = getDataset<char*>(group, "categories");
+    }
+
+    // clear resources
+    delete file;
 
     return true;
 }
 
-bool trainData(string& filename, vector<uint32>& idxs, vector<uint32>& values, vector<uint32>& genes)
+bool DataParser::trainData()
 {
-    // open h5 file handle
-    H5File* file = new H5File(filename.c_str(), H5F_ACC_RDONLY);
+    Timer timer("ms");
+    // Groupby celltype of each cell
+    map<uint8, vector<uint32>> group_by;
+    for (uint32 i = 0; i < celltype_codes.size(); ++i)
+    {
+        group_by[celltype_codes[i]].push_back(i);
+    }
 
-    loadRefMatrix(file);
+    // cout<<"groupby time: "<<timer.toc()<<endl;
 
-    // clear resources
-    delete file;
+    // Calculate median gene value for each celltype
+    map<uint8, vector<float>> median_map;
+    for (auto& [ct, idxs] : group_by)
+    {
+        vector<float> sub_ref;
+        sub_ref.resize(idxs.size() * ref_width, 0);
+        int line = 0;
+        for (auto& idx : idxs)
+        {
+            auto start = ref_indptr[idx];
+            auto end = ref_indptr[idx+1];
+            for (uint32 i = start; i < end; ++i)
+            {
+                sub_ref[line*ref_width + ref_indices[i]] = ref_data[i];
+            }
+            line++;
+        }
+        // cout<<"sub ref time: "<<timer.toc()<<endl;
+
+        vector<float> median;
+        for (uint32 i = 0; i < ref_width; ++i)
+        {
+            vector<float> cols;
+            for (uint32 j = 0; j < idxs.size(); ++j)
+            {
+                cols.push_back(sub_ref[j*ref_width+i]);
+            }
+            if (cols.size() % 2 == 0)
+            {
+                std::sort(cols.begin(), cols.end());
+                median.push_back((cols[cols.size()/2]+cols[cols.size()/2-1])/2);
+            }
+            else
+            {
+                std::nth_element(cols.begin(), cols.begin()+cols.size()/2, cols.end());
+                median.push_back(cols[cols.size()/2]);
+            }
+        }
+        median_map.insert({ct, median});
+        // cout<<"median time: "<<timer.toc()<<endl;
+    }
+    cout<<"median time: "<<timer.toc()<<endl;
+
+    // Calculate difference for each two celltypes
+    uint32 idx_start = 0;
+    size_t gene_thre = round(500 * pow((2 / 3.0), log2(uniq_celltypes.size())));
+
+    for (auto& [k1, v1] : median_map)
+    {
+        for (auto& [k2, v2] : median_map)
+        {
+            if (k1 == k2)
+            {
+                // padding zero
+                ref_idxs.push_back(0);
+                ref_idxs.push_back(0);
+                continue;
+            }
+            // Get diff of two array
+            vector<pair<float, uint32>> diff;
+            for (int i = 0; i < ref_width; ++i)
+            {
+                diff.push_back({v1[i] - v2[i], ref_width-i-1});
+            }
+            
+            // Sort by ascending order
+            std::sort(diff.begin(),diff.end(),std::greater<pair<float,uint32>>());
+                
+            // Only need the score > 0
+            int i = 0;
+            for (; i < diff.size(); ++i)
+            {
+                if (diff[i].first <= 0) break;
+                ref_values.push_back(diff[i].second);
+            }
+            // cout<<uniq_celltypes[k1]<<"-"<<uniq_celltypes[k2]<<" "<<i<<endl;
+            // for (int j = 0; j < i; ++j)
+            //     cout<<"score: "<<diff[j].first<<" "<<diff[j].second<<endl;
+            ref_idxs.push_back(idx_start);
+            ref_idxs.push_back(i);
+            idx_start += i;
+            // Collect common genes in top N
+            for (int i = 0; i < gene_thre; ++i)
+            {
+                common_genes.insert(diff[i].second);
+            }
+
+        }
+    }
+    cout<<"common genes size: "<<common_genes.size()<<endl;
+    cout<<"ref_idxs size: "<<ref_idxs.size()<<endl;
+    cout<<"ref_values size: "<<ref_values.size()<<endl;
+    cout<<"train time: "<<timer.toc()<<endl;
+
+    return true;
+}
+
+DataParser::DataParser(string ref_file, string qry_file) : 
+    ref_file(ref_file), qry_file(qry_file)
+{
+
+}
+
+bool DataParser::loadRefData()
+{
+    // Load raw data from h5 file
+    loadRefMatrix();
+
+    // Logarithmize the data matrix
+    std::transform(ref_data.begin(), ref_data.end(), ref_data.begin(), [](float f){ return log2(f+1);});
+
+    // map<float, uint32> m;
+    // for (auto& f : ref_data)
+    //     m[f]++;
+    // for (auto& [k,v] : m)
+    //     cout<<"new: "<<k<<" "<<v<<endl;
+    // Train data
+    trainData();
 
     return true;
 }

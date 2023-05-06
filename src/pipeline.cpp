@@ -238,11 +238,11 @@ void Pipeline::resort()
 
 Pipeline::Pipeline(string filename)
 {
-    // cout << "start loading data." << endl;
-    // if (!readInput(filename, rawdata))
-    //     cerr << "failed loading input h5 file." << endl;
-    // else
-    //     cout << "success loading input h5 file." << endl;
+    cout << "start loading data." << endl;
+    if (!readInput(filename, rawdata))
+        cerr << "failed loading input h5 file." << endl;
+    else
+        cout << "success loading input h5 file." << endl;
 }
 
 bool Pipeline::preprocess()
@@ -303,6 +303,10 @@ bool Pipeline::preprocess()
             }
         }
     }
+    cout<<"ref_idxs size: "<<ctdidx.size()<<endl;
+    cout<<"ref_values size: "<<ctdiff.size()<<endl;
+    exit(0);
+
 
     // for (size_t i = 0; i < ctdidx.size()/2; ++i)
     //     cout<<"celltype's diff cells start: "<<ctdidx[i*2]<<" len:
@@ -376,13 +380,14 @@ bool Pipeline::work(int mod)
 
 bool Pipeline::train(string ref_file)
 {
-    cout << "start loading data." << endl;
+    cout << "start training ref data." << endl;
     vector< uint32 > train_ctdiff;
     vector< uint32 > train_ctdidx;
     vector< uint32 > common_genes;
-    if (!trainData(ref_file, train_ctdiff, train_ctdidx, common_genes))
-        cerr << "failed loading input h5 file." << endl;
+    DataParser parser(ref_file, "");
+    if (parser.loadRefData())
+        cerr << "success training ref data." << endl;
     else
-        cout << "success loading input h5 file." << endl;    
+        cout << "failed training ref data." << endl;    
     return true;
 }
