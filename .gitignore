@@ -1,4 +1,4 @@
-*.h5
+data/
 build/
 install/
 settings.json

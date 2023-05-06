@@ -12,3 +12,4 @@ using namespace std;
 #include "types.h"
 
 bool readInput(string& filename, InputData& data);
+bool trainData(string& filename, vector<uint32>& idxs, vector<uint32>& values, vector<uint32>& genes);

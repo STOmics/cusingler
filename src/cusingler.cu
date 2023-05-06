@@ -689,7 +689,7 @@ vector< uint32 > finetune_round(uint16* qry, vector< uint32 > top_labels, const 
     // transfer qry data from cpu to gpu
     CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size() * sizeof(uint32),
                      cudaMemcpyHostToDevice));
-    get_device_qry_line< < < h_gene_idx.size() / 1024 + 1, 1024 > > >(
+    get_device_qry_line<<< h_gene_idx.size() / 1024 + 1, 1024 >>>(
         d_gene_idx, qry, h_gene_idx.size(), qry_width, d_qry_line);
     err = cudaGetLastError();
     if (err != cudaSuccess)

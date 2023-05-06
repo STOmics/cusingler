@@ -12,20 +12,22 @@ using namespace std;
 
 int main(int argc, char** argv)
 {
-    if (argc != 2 && argc != 3)
+    if (argc != 3 && argc != 4)
     {
-        cerr << "enter <input.h5>" << endl;
+        cerr << "enter <input.h5> <ref h5>" << endl;
         exit(-1);
     }
     string filename(argv[1]);
+    string ref_h5(argv[2]);
     int    mod = 0;
-    if (argc == 3)
+    if (argc == 4)
     {
-        mod = stoi(argv[2]);
+        mod = stoi(argv[3]);
     }
     Pipeline pipeline = Pipeline(filename);
-    pipeline.preprocess();
-    pipeline.work(mod);
+    pipeline.train(ref_h5);
+    // pipeline.preprocess();
+    // pipeline.work(mod);
 
     return 0;
 }

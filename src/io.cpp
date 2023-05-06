@@ -196,3 +196,48 @@ bool readInput(string& filename, InputData& data)
 
     return true;
 }
+
+
+bool loadRefMatrix(H5File* file)
+{
+    DataSet   dataset   = DataSet(file->openDataSet("/X"));
+    Attribute attr(dataset.openAttribute("order"));
+    auto datatype  = attr.getDataType();
+    vector<uint32> shapes(2, 0);
+    attr.read(datatype, shapes.data());
+    uint32 height = shapes[0];
+    uint32 width = shapes[1];
+    cout<<"Ref shape: "<<height<<" x "<<width<<endl;
+
+    
+    // DataSet   dataset   = DataSet(file->openDataSet("/X/data"));
+    // auto      datatype  = dataset.getDataType();
+    // DataSpace dataspace = dataset.getSpace();
+    // int       rank      = dataspace.getSimpleExtentNdims();
+    // hsize_t   dims[rank];
+    // dataspace.getSimpleExtentDims(dims, NULL);
+
+    // size_t test_size = 1;
+    // for (int i = 0; i < rank; ++i)
+    //     test_size *= dims[i];
+    // labels.resize(test_size);
+    // dataset.read(&labels[0], datatype);
+
+    // cout << "labels size: " << labels.size() << " " << dims[0] << " x " << dims[1]
+    //      << endl;
+
+    return true;
+}
+
+bool trainData(string& filename, vector<uint32>& idxs, vector<uint32>& values, vector<uint32>& genes)
+{
+    // open h5 file handle
+    H5File* file = new H5File(filename.c_str(), H5F_ACC_RDONLY);
+
+    loadRefMatrix(file);
+
+    // clear resources
+    delete file;
+
+    return true;
+}
