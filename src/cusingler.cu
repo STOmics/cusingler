@@ -697,7 +697,7 @@ vector< uint32 > finetune_round(uint16* qry, vector< uint32 > top_labels, const 
         printf("get_device_qry_line CUDA Error: %s\n", cudaGetErrorString(err));
     }
     // get rank of qry data
-    rankdata< < < (h_gene_idx.size() - 1) / 1024 + 1, 1024 > > >(d_qry_line, d_qry_rank,
+    rankdata<<< (h_gene_idx.size() - 1) / 1024 + 1, 1024 >>>(d_qry_line, d_qry_rank,
                                                                  h_gene_idx.size());
     err = cudaGetLastError();
     if (err != cudaSuccess)
@@ -741,7 +741,7 @@ vector< uint32 > finetune_round(uint16* qry, vector< uint32 > top_labels, const 
     // dim3 gridDim((h_cell_idx.size()-1)/32+1, (h_gene_idx.size()-1)/32+1);
     dim3 blockDim(1, 512);
     dim3 gridDim(h_cell_idx.size(), h_gene_idx.size() / 512 + 1);
-    get_device_ref_lines< < < gridDim, blockDim > > >(
+    get_device_ref_lines<<< gridDim, blockDim >>>(
         d_gene_idx, h_gene_idx.size(), d_cell_idx, h_cell_idx.size(), d_ref, ref_width,
         ( uint64 )pitchref, d_ref_lines);
 
@@ -763,7 +763,7 @@ vector< uint32 > finetune_round(uint16* qry, vector< uint32 > top_labels, const 
 
     if (mod == 0)
     {
-        rankdata_bin3< < < total_len, 64 > > >(d_ref_lines, h_gene_idx.size(), total_len,
+        rankdata_bin3<<< total_len, 64 >>>(d_ref_lines, h_gene_idx.size(), total_len,
                                                d_ref_rank);
         err = cudaGetLastError();
         if (err != cudaSuccess)
@@ -774,8 +774,8 @@ vector< uint32 > finetune_round(uint16* qry, vector< uint32 > top_labels, const 
     else if (mod == 1)
     {
         // len=h_cell_idx.size()
-        rankdata_batch< < < (h_cell_idx.size() * h_gene_idx.size() - 1) / 512 + 1,
-                            512 > > >(d_ref_lines, d_ref_rank, h_gene_idx.size(),
+        rankdata_batch<<< (h_cell_idx.size() * h_gene_idx.size() - 1) / 512 + 1,
+                            512 >>>(d_ref_lines, d_ref_rank, h_gene_idx.size(),
                                       h_cell_idx.size());
         err = cudaGetLastError();
         if (err != cudaSuccess)
@@ -806,7 +806,7 @@ vector< uint32 > finetune_round(uint16* qry, vector< uint32 > top_labels, const 
 
     // spearman
 
-    spearman_reduce< < < total_len, 128 > > >(d_qry_rank, d_ref_rank, h_gene_idx.size(),
+    spearman_reduce<<< total_len, 128 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(),
                                               total_len, d_score);
 
     cudaError_t err = cudaGetLastError();
