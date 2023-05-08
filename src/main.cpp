@@ -26,7 +26,7 @@ int main(int argc, char** argv)
     }
     Pipeline pipeline = Pipeline(filename);
     pipeline.train(ref_h5);
-    pipeline.preprocess();
+    // pipeline.preprocess();
     // pipeline.work(mod);
 
     return 0;

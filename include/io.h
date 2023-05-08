@@ -26,6 +26,7 @@ public:
 private:
     bool trainData();
     bool loadRefMatrix();
+    bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, int width, vector<float>& res);
 
 private:
     string ref_file;
@@ -43,4 +44,7 @@ private:
     vector<uint32> ref_idxs;
     vector<uint32> ref_values;
     set<uint32> common_genes;
+
+    // Dense matrix
+    vector<float> ref_dense;
 };

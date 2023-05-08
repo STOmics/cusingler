@@ -393,5 +393,33 @@ bool DataParser::loadRefData()
     // Train data
     trainData();
 
+    // Transform matrix format from csr to dense
+    csr2dense(ref_data, ref_indptr, ref_indices, ref_width, ref_dense);
+
+    cout<<"ref data shape: "<<ref_height <<" x "<<ref_width<<" non-zero number: "<<ref_data.size()<<endl;
+    // for (int i = 0; i < 100; i++)
+    //     cout<<ref_dense[i]<<" ";
+    // cout<<endl;
+
+    return true;
+}
+
+bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, int width, vector<float>& res)
+{
+    int height = indptr.size() - 1;
+    res.resize((size_t)(width) * height, 0);
+
+    size_t line = 0;
+    for (int i = 0; i < height; ++i)
+    {
+        auto start = indptr[i];
+        auto end = indptr[i+1];
+        for (uint32 i = start; i < end; ++i)
+        {
+            res[line*width + indices[i]] = data[i];
+        }
+        line++;
+    }
+
     return true;
 }
