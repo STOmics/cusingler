@@ -19,7 +19,7 @@ public:
     Pipeline(string filename);
     ~Pipeline(){};
     bool preprocess();
-    bool train(string ref_file);
+    bool train(string ref_file, string qry_file);
     bool work(int mod);
 
 private:

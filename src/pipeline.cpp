@@ -378,16 +378,19 @@ bool Pipeline::work(int mod)
     return true;
 }
 
-bool Pipeline::train(string ref_file)
+bool Pipeline::train(string ref_file, string qry_file)
 {
     cout << "start training ref data." << endl;
     vector< uint32 > train_ctdiff;
     vector< uint32 > train_ctdidx;
     vector< uint32 > common_genes;
-    DataParser parser(ref_file, "");
+    DataParser parser(ref_file, qry_file);
     if (parser.loadRefData())
         cerr << "success training ref data." << endl;
     else
-        cout << "failed training ref data." << endl;    
+        cout << "failed training ref data." << endl;
+
+    parser.loadQryData();
+
     return true;
 }

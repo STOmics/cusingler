@@ -12,20 +12,21 @@ using namespace std;
 
 int main(int argc, char** argv)
 {
-    if (argc != 3 && argc != 4)
+    if (argc < 4)
     {
-        cerr << "enter <input.h5> <ref h5>" << endl;
+        cerr << "enter <input.h5> <ref h5> <qry h5> [mode]" << endl;
         exit(-1);
     }
     string filename(argv[1]);
     string ref_h5(argv[2]);
+    string qry_h5(argv[3]);
     int    mod = 0;
     if (argc == 4)
     {
         mod = stoi(argv[3]);
     }
     Pipeline pipeline = Pipeline(filename);
-    pipeline.train(ref_h5);
+    pipeline.train(ref_h5, qry_h5);
     // pipeline.preprocess();
     // pipeline.work(mod);
 

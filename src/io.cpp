@@ -423,3 +423,42 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
 
     return true;
 }
+
+bool DataParser::loadQryData()
+{
+    loadQryMatrix();
+
+    csr2dense(qry_data, qry_indptr, qry_indices, qry_width, qry_dense);
+
+    cout<<"qry data shape: "<<qry_height <<" x "<<qry_width<<" non-zero number: "<<qry_data.size()<<endl;
+
+    return true;
+}
+
+bool DataParser::loadQryMatrix()
+{
+    // Open h5 file handle
+    H5File* file = new H5File(qry_file.c_str(), H5F_ACC_RDONLY);
+
+    // Load matrix data and shape
+    {
+        auto group(file->openGroup("/X"));
+
+        Attribute attr(group.openAttribute("shape"));
+        auto datatype  = attr.getDataType();
+        vector<uint64> shapes(2, 0);
+        attr.read(datatype, shapes.data());
+        qry_height = shapes[0];
+        qry_width = shapes[1];
+        cout<<"Qry shape: "<<qry_height<<" x "<<qry_width<<endl;
+
+        qry_data = getDataset<float>(group, "data");
+        qry_indices = getDataset<int>(group, "indices");
+        qry_indptr = getDataset<int>(group, "indptr");
+    }
+
+    // clear resources
+    delete file;
+
+    return true;
+}

@@ -28,6 +28,8 @@ private:
     bool loadRefMatrix();
     bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, int width, vector<float>& res);
 
+    bool loadQryMatrix();
+
 private:
     string ref_file;
     string qry_file;
@@ -47,4 +49,11 @@ private:
 
     // Dense matrix
     vector<float> ref_dense;
+    vector<float> qry_dense;
+
+    // Raw qry data from h5 file
+    vector<float> qry_data;
+    vector<int> qry_indices;
+    vector<int> qry_indptr;
+    uint32 qry_height, qry_width;
 };
