@@ -21,6 +21,7 @@ public:
     bool preprocess();
     bool work(int mod);
 
+    bool score_data(int mod);
 private:
    // bool score_data();
     bool scale(vector<float>& src, const uint32 rows, const uint32 cols, vector<uint16>& dest);
@@ -28,6 +29,7 @@ private:
     void filter();
     void resort();
 
+    
 private:
     InputData rawdata;
     vector<uint32> ctids;   // cell index of each cell type in ref data

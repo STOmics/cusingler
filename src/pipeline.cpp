@@ -16,11 +16,6 @@
 #include <cassert>
 using namespace std;
 
-// bool Pipeline::score_data()
-// {
-//     //todo
-// }
-
 bool Pipeline::scale(vector<float>& src, const uint32 rows, const uint32 cols, vector<uint16>& dest)
 {
     dest.resize(src.size(), 0);
@@ -231,6 +226,39 @@ void Pipeline::resort()
         ctids[i] = i;
 
 }
+
+bool Pipeline::score_data(int mod)
+{
+    
+   
+    if(mod == 0)
+        cout<<"score_data by bin"<<endl;
+    else if (mod==1)
+    {
+        cout<<"score_data by cnt"<<endl;
+    }
+    else
+    {
+        cerr<<"invalid mod."<<endl;
+        exit(-1);
+    }
+    cout<<"score_data"<<endl;
+    //get score
+    get_label(rawdata,mod);
+
+    //compare with threshold
+
+
+
+    //todo
+   
+
+    //flip
+
+
+    return true;
+}
+
 
 Pipeline::Pipeline(string filename)
 {

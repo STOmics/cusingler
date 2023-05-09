@@ -249,6 +249,47 @@ __global__ void rankdata(float* dataIn,float* dataOut,const int datalen)
 
 }
 
+// bool copyin1(InputData& rawdata ,vector<uint16>& ref, vector<uint16>& qry)
+// {
+//     ref_height = rawdata.ref_cell_num;
+//     ref_width = rawdata.ref_gene_num;
+//     qry_height = rawdata.test_cell_num;
+//     qry_width = rawdata.test_gene_num;
+//     ct_num = rawdata.celltypes.size();
+
+
+//     CHECK(cudaStreamCreate(&stream));
+//    // cout<<"current stream"<<stream<<endl;
+//     CHECK(cudaMallocPitch((void**)&d_ref,&pitchref,ref_width*sizeof(uint16),ref_height));
+//     CHECK(cudaMallocPitch((void**)&d_qry,&pitchqry,qry_width*sizeof(uint16),qry_height));
+
+//     cudaMemcpy2DAsync(d_ref,pitchref, ref.data(), ref_width * sizeof(uint16),ref_width * sizeof(uint16),ref_height,cudaMemcpyHostToDevice,stream);
+//     cudaMemcpy2DAsync(d_qry,pitchqry, qry.data(),qry_width * sizeof(uint16),qry_width * sizeof(uint16),qry_height,cudaMemcpyHostToDevice,stream);
+//     // // cudaMemcpy(d_labels, rawdata.labels.data(), qry_height * ct_num * sizeof(float), cudaMemcpyHostToDevice);
+//     h_labels = rawdata.labels;
+//     //CHECK( cudaMemcpyAsync(d_ctids, ctids.data(), ctids.size() * sizeof(uint32), cudaMemcpyHostToDevice,stream));
+//     cudaStreamSynchronize(stream);
+//     // std::this_thread::sleep_for(std::chrono::seconds(5));
+//     cudaMalloc((void**)&d_gene_idx, qry_width * sizeof(uint32));
+//     cudaMalloc((void**)&d_cell_idx, ref_height * sizeof(uint32));
+//     cudaMalloc((void**)&d_qry_line, qry_width * sizeof(uint16));
+//     cudaMalloc((void**)&d_qry_rank, qry_width * sizeof(float));
+//     bool *d_labels;
+//     cudaMalloc((void**)&d_labels,ct_num*qry_height*sizeof(bool));
+    
+//     //h_genidx.size() <4096
+
+//     // ref_lines_width=4096;
+//     // CHECK(cudaMallocPitch((void**)&d_ref_lines,&pitch_ref_lines,ref_lines_width*sizeof(uint16),ref_height));
+
+//     CHECK(cudaMalloc((void**)&d_ref_lines, 200000000 * sizeof(uint16));)                               
+//     cudaMalloc((void**)&d_ref_rank, 200000000 * sizeof(float));
+//     cudaMalloc((void**)&d_score,100000* sizeof(float));
+
+//     std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
+
+//     return true;
+// }
 
 
 
@@ -663,6 +704,41 @@ float percentile(vector<float> arr, int len, float p)
     return res;
 }
 
+vector<float> get_label(InputData& rawdata,int mod)
+{
+    
+    //get ref
+
+    //get qry
+    //speearman
+    // compare with threshold
+    vector<uint32> all_labels;
+    all_labels.resize(rawdata.celltypes.size());//34
+    for (int i=0;i<rawdata.celltypes.size();i++)//0-33
+    {
+        all_labels.push_back(i);
+    }
+
+    set<uint32> uniq_genes;
+    int gene_thre = round(500 * pow((2/3.0), log2(all_labels.size())));
+
+    for (auto& i : all_labels)//??line 159  topl cant be 0??
+    {
+        for (auto& j : all_labels)
+        {
+            if (i == j)//same cant be 0?
+                continue;
+            int pos = h_ctdidx[(i * ct_num + j) * 2];
+            int len = h_ctdidx[(i * ct_num + j) * 2 + 1];
+            if (len > gene_thre)
+                len = gene_thre;
+            uniq_genes.insert(h_ctdiff.begin()+pos, h_ctdiff.begin()+pos+len);
+            // cout<<"temp uniq genes size: "<<uniq_genes.size()<<endl;
+        }
+    }
+    
+
+}
 vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int mod)
 {
 
