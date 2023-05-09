@@ -16,31 +16,18 @@ using namespace std;
 class Pipeline
 {
 public:
-    Pipeline(string filename);
+    Pipeline();
     ~Pipeline(){};
-    bool preprocess();
-    bool train(string ref_file, string qry_file);
-    bool work(int mod);
 
-private:
+    bool train(string filename, string ref_file, string qry_file);
+    bool score();
+    bool fintune(int mod);
+
+// private:
     // bool score_data();
-    bool scale(vector< float >& src, const uint32 rows, const uint32 cols,
-               vector< uint16 >& dest);
-    bool filter_genes(vector< uint16 >& src, const uint32 rows, const uint32 cols,
-                      set< uint32 >& genes);
-    void filter();
-    void resort();
+    
 
 private:
-    InputData        rawdata;
-    vector< uint32 > ctids;  // cell index of each cell type in ref data
-    vector< uint32 > ctidx;
+    InputData        raw_data;
 
-    vector< uint32 > ctdiff;  // gene index of between two cell types in ref data
-    vector< uint32 > ctdidx;
-
-    int label_num;
-
-    vector< uint16 > ref;
-    vector< uint16 > qry;
 };

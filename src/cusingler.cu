@@ -242,11 +242,11 @@ bool copyin(InputData& rawdata, vector< uint32 >& ctids, vector< uint32 >& ctidx
             vector< uint32 >& ctdiff, vector< uint32 >& ctdidx, vector< uint16 >& ref,
             vector< uint16 >& qry)
 {
-    ref_height = rawdata.ref_cell_num;
-    ref_width  = rawdata.ref_gene_num;
-    qry_height = rawdata.test_cell_num;
-    qry_width  = rawdata.test_gene_num;
-    ct_num     = rawdata.celltypes.size();
+    ref_height = rawdata.ref_height;
+    ref_width  = rawdata.ref_width;
+    qry_height = rawdata.qry_height;
+    qry_width  = rawdata.qry_width;
+    ct_num     = rawdata.ct_num;
 
     CHECK(cudaStreamCreate(&stream));
     // cout<<"current stream"<<stream<<endl;

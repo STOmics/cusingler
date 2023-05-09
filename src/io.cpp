@@ -13,98 +13,17 @@
 #include <map>
 #include <algorithm>
 #include <cmath>
+#include <cassert>
 using namespace std;
 
 #include "H5Cpp.h"
 using namespace H5;
 
-bool readObs(H5File* file, InputData& data)
+bool readLabels(string filename, InputData& data)
 {
-    // StrType str_type(PredType::C_S1, H5T_VARIABLE);
-    // str_type.setCset(H5T_CSET_UTF8);
+    // open h5 file handle
+    H5File* file = new H5File(filename.c_str(), H5F_ACC_RDONLY);
 
-    DataSet   dataset   = DataSet(file->openDataSet("/obs_key"));
-    auto      datatype  = dataset.getDataType();
-    DataSpace dataspace = dataset.getSpace();
-    hsize_t   dims[1];
-    dataspace.getSimpleExtentDims(dims, NULL);
-    char* obs_key[dims[0]];
-    dataset.read(obs_key, datatype);
-
-    dataset = DataSet(file->openDataSet("/obs_value"));
-    char* obs_value[dims[0]];
-    dataset.read(&obs_value[0], datatype);
-
-    for (size_t i = 0; i < dims[0]; ++i)
-    {
-        // data.obs.insert({obs_key[i], obs_value[i]});
-        data.obs_keys.push_back(obs_key[i]);
-        data.obs_values.push_back(obs_value[i]);
-    }
-
-    cout << "obs size: " << data.obs_keys.size() << endl;
-    // for (auto&[k, v] : data.obs)
-    //     cout<<k<<" "<<v<<endl;
-
-    return true;
-}
-
-bool readRef(H5File* file, InputData& data)
-{
-    auto& ref = data.ref;
-
-    DataSet   dataset   = DataSet(file->openDataSet("/ref"));
-    auto      datatype  = dataset.getDataType();
-    DataSpace dataspace = dataset.getSpace();
-    int       rank      = dataspace.getSimpleExtentNdims();
-    hsize_t   dims[rank];
-    dataspace.getSimpleExtentDims(dims, NULL);
-
-    size_t ref_size = 1;
-    for (int i = 0; i < rank; ++i)
-        ref_size *= dims[i];
-    ref.resize(ref_size);
-    dataset.read(&ref[0], datatype);
-
-    data.ref_cell_num = dims[0];
-    data.ref_gene_num = dims[1];
-    cout << "ref size: " << ref.size() << " " << dims[0] << " x " << dims[1] << endl;
-
-    // map<float, uint32> m;
-    // for (auto& f : ref)
-    //     m[f]++;
-    // for (auto& [k,v] : m)
-    //     cout<<"old: "<<k<<" "<<v<<endl;
-
-    return true;
-}
-
-bool readTest(H5File* file, InputData& data)
-{
-    auto& test = data.test;
-
-    DataSet   dataset   = DataSet(file->openDataSet("/test"));
-    auto      datatype  = dataset.getDataType();
-    DataSpace dataspace = dataset.getSpace();
-    int       rank      = dataspace.getSimpleExtentNdims();
-    hsize_t   dims[rank];
-    dataspace.getSimpleExtentDims(dims, NULL);
-
-    size_t test_size = 1;
-    for (int i = 0; i < rank; ++i)
-        test_size *= dims[i];
-    test.resize(test_size);
-    dataset.read(&test[0], datatype);
-
-    data.test_cell_num = dims[0];
-    data.test_gene_num = dims[1];
-    cout << "test size: " << test.size() << " " << dims[0] << " x " << dims[1] << endl;
-
-    return true;
-}
-
-bool readLabels(H5File* file, InputData& data)
-{
     auto& labels = data.labels;
 
     DataSet   dataset   = DataSet(file->openDataSet("/tmp"));
@@ -122,84 +41,6 @@ bool readLabels(H5File* file, InputData& data)
 
     cout << "labels size: " << labels.size() << " " << dims[0] << " x " << dims[1]
          << endl;
-
-    Attribute attr(dataset.openAttribute("order"));
-    datatype  = attr.getDataType();
-    dataspace = attr.getSpace();
-    dataspace.getSimpleExtentDims(dims, NULL);
-    char* orders[dims[0]];
-    attr.read(datatype, orders);
-
-    for (int i = 0; i < dims[0]; ++i)
-    {
-        data.celltypes.push_back(orders[i]);
-    }
-    cout << "celltypes size: " << data.celltypes.size() << endl;
-
-    return true;
-}
-
-bool readTrained(H5File* file, InputData& data)
-{
-    // aux function for traveling datasets of '/trained'
-    auto file_info =
-        [](hid_t loc_id, const char* name, const H5L_info_t* linfo, void* opdata)
-    {
-        auto dataset = H5Dopen2(loc_id, name, H5P_DEFAULT);
-        auto ids     = reinterpret_cast< vector< string >* >(opdata);
-        ids->push_back(name);
-        H5Dclose(dataset);
-        return 0;
-    };
-    vector< string > ids;
-    Group            group = Group(file->openGroup("/trained"));
-    H5Literate(group.getId(), H5_INDEX_NAME, H5_ITER_INC, NULL, file_info, &ids);
-
-    auto& trained = data.trained;
-    for (auto& id : ids)
-    {
-        vector< double > aux_list;
-
-        DataSet   dataset   = DataSet(group.openDataSet(id));
-        auto      datatype  = dataset.getDataType();
-        DataSpace dataspace = dataset.getSpace();
-        int       rank      = dataspace.getSimpleExtentNdims();
-        hsize_t   dims[rank];
-        dataspace.getSimpleExtentDims(dims, NULL);
-
-        size_t test_size = 1;
-        for (int i = 0; i < rank; ++i)
-            test_size *= dims[i];
-        aux_list.resize(test_size);
-        dataset.read(&aux_list[0], datatype);
-
-        trained.insert({ id, aux_list });
-    }
-
-    cout << "trained data size: " << trained.size() << endl;
-
-    return true;
-}
-
-bool readInput(string& filename, InputData& data)
-{
-    // open h5 file handle
-    H5File* file = new H5File(filename.c_str(), H5F_ACC_RDONLY);
-
-    // read obs key and value, then construct map
-    readObs(file, data);
-
-    // read ref from matrix to list
-    readRef(file, data);
-
-    // read query data from matrix to list
-    readTest(file, data);
-
-    // read labels
-    readLabels(file, data);
-
-    // read trained data
-    readTrained(file, data);
 
     // clear resources
     delete file;
@@ -257,6 +98,7 @@ bool DataParser::loadRefMatrix()
 
         celltype_codes = getDataset<uint8>(group, "codes");
         uniq_celltypes = getDataset<char*>(group, "categories");
+        label_num = uniq_celltypes.size();
     }
 
     // clear resources
@@ -331,8 +173,8 @@ bool DataParser::trainData()
             if (k1 == k2)
             {
                 // padding zero
-                ref_idxs.push_back(0);
-                ref_idxs.push_back(0);
+                ref_train_idxs.push_back(0);
+                ref_train_idxs.push_back(0);
                 continue;
             }
             // Get diff of two array
@@ -350,13 +192,13 @@ bool DataParser::trainData()
             for (; i < diff.size(); ++i)
             {
                 if (diff[i].first <= 0) break;
-                ref_values.push_back(diff[i].second);
+                ref_train_values.push_back(diff[i].second);
             }
             // cout<<uniq_celltypes[k1]<<"-"<<uniq_celltypes[k2]<<" "<<i<<endl;
             // for (int j = 0; j < i; ++j)
             //     cout<<"score: "<<diff[j].first<<" "<<diff[j].second<<endl;
-            ref_idxs.push_back(idx_start);
-            ref_idxs.push_back(i);
+            ref_train_idxs.push_back(idx_start);
+            ref_train_idxs.push_back(i);
             idx_start += i;
             // Collect common genes in top N
             for (int i = 0; i < gene_thre; ++i)
@@ -367,15 +209,15 @@ bool DataParser::trainData()
         }
     }
     cout<<"common genes size: "<<common_genes.size()<<endl;
-    cout<<"ref_idxs size: "<<ref_idxs.size()<<endl;
-    cout<<"ref_values size: "<<ref_values.size()<<endl;
+    cout<<"ref_train_idxs size: "<<ref_train_idxs.size()<<endl;
+    cout<<"ref_train_values size: "<<ref_train_values.size()<<endl;
     cout<<"train time: "<<timer.toc()<<endl;
 
     return true;
 }
 
-DataParser::DataParser(string ref_file, string qry_file) : 
-    ref_file(ref_file), qry_file(qry_file)
+DataParser::DataParser(string ref_file, string qry_file, int thread_num) : 
+    ref_file(ref_file), qry_file(qry_file), thread_num(thread_num)
 {
     filter_genes = false;
 }
@@ -526,4 +368,271 @@ bool DataParser::loadQryMatrix()
     delete file;
 
     return true;
+}
+
+bool DataParser::groupbyCelltypes()
+{
+    auto label_num = uniq_celltypes.size();
+
+    vector< vector< uint32 > > aux_vec;
+    aux_vec.resize(label_num);
+    for (size_t i = 0; i < celltype_codes.size(); ++i)
+    {
+        aux_vec[celltype_codes[i]].push_back(i);
+    }
+    uint32 start = 0;
+    for (auto& vec : aux_vec)
+    {
+        ref_ctidx.push_back(start);
+        ref_ctidx.push_back(vec.size());
+        start += vec.size();
+        ref_ctids.insert(ref_ctids.end(), vec.begin(), vec.end());
+    }
+    return true;
+}
+
+bool DataParser::preprocess()
+{
+    Timer timer("ms");
+
+    groupbyCelltypes();
+    cout << "groupby celltypes of ref cost time(ms): " << timer.toc() << endl;
+
+    scale(ref_dense, ref_height, ref_width, raw_data.ref);
+    cout << "scale ref cost time(ms): " << timer.toc() << endl;
+    vector< float >().swap(ref_dense);
+
+    timer.tic();
+    scale(qry_dense, qry_height, qry_width, raw_data.qry);
+    cout << "scale qry cost time(ms): " << timer.toc() << endl;
+    vector< float >().swap(qry_dense);
+
+    // filter genes of datas
+    timer.tic();
+    filter();
+    cout << "filter genes cost time(ms): " << timer.toc() << endl;
+    cout << "new qry size: " << raw_data.qry_height << " x " << raw_data.qry_width
+         << endl;
+    cout << "new ref size: " << raw_data.ref_height << " x " << raw_data.ref_width
+         << endl;
+
+    // re-sort ref data groupby celltype
+    resort();
+    cout << "re-sort ref by celltype cost time(ms): " << timer.toc() << endl;
+
+    raw_data.ctdidx = ref_train_idxs;
+    raw_data.ctdiff = ref_train_values;
+
+    raw_data.ctids = ref_ctids;
+    raw_data.ctidx = ref_ctidx;
+
+    raw_data.ct_num = uniq_celltypes.size();
+
+    raw_data.celltypes = uniq_celltypes;
+
+    return true;
+}
+
+bool DataParser::scale(vector< float >& src, const uint32 rows, const uint32 cols,
+                     vector< uint16 >& dest)
+{
+    dest.resize(src.size(), 0);
+
+    std::mutex m;
+    auto       task = [&](size_t start, size_t rows, size_t cols)
+    {
+        size_t max_index = 0;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            set< float > uniq;
+            for (size_t j = 0; j < cols; ++j)
+                uniq.insert(src[start + i * cols + j]);
+            assert(uniq.size() < 65536);
+
+            vector< float >                order(uniq.begin(), uniq.end());
+            unordered_map< float, uint16 > index;
+            for (uint16 j = 0; j < order.size(); ++j)
+            {
+                index[order[j]] = j;
+            }
+            for (size_t j = 0; j < cols; ++j)
+                dest[start + i * cols + j] = index[src[start + i * cols + j]];
+            max_index = max(max_index, index.size());
+        }
+
+        // std::lock_guard<std::mutex> lg(m);
+        // cout<<"max index: "<<max_index<<endl;
+    };
+    vector< thread > threads;
+    size_t           start = 0;
+    size_t           step  = rows / thread_num;
+    if (rows % thread_num != 0)
+        step++;
+    for (int i = 0; i < thread_num; ++i)
+    {
+        start = i * step * cols;
+        if (i == (thread_num - 1))
+            step = rows - i * step;
+        thread th(task, start, step, cols);
+        // cout<<start<<" "<<step<<" "<<cols<<endl;
+        threads.push_back(std::move(th));
+    }
+    for (auto& th : threads)
+    {
+        th.join();
+    }
+
+    return true;
+}
+
+bool DataParser::filterGenes(vector< uint16 >& src, const uint32 rows, const uint32 cols,
+                            set< uint32 >& genes)
+{
+    vector< uint16 > dest;
+    dest.resize(size_t(rows) * genes.size(), 0);
+
+    auto task = [&](size_t start, size_t rows, size_t cols)
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            uint32 nj = 0;
+            for (size_t j = 0; j < cols; ++j)
+            {
+                if (genes.count(cols - j - 1) == 0)
+                    continue;
+                dest[(start + i) * genes.size() + nj] = src[(start + i) * cols + j];
+                nj++;
+            }
+        }
+    };
+    vector< thread > threads;
+    size_t           start = 0;
+    size_t           step  = rows / thread_num;
+    if (rows % thread_num != 0)
+        step++;
+    for (int i = 0; i < thread_num; ++i)
+    {
+        start = i * step;
+        if (i == (thread_num - 1))
+            step = rows - i * step;
+        thread th(task, start, step, cols);
+        // cout<<start<<" "<<step<<" "<<cols<<endl;
+        threads.push_back(std::move(th));
+    }
+    for (auto& th : threads)
+    {
+        th.join();
+    }
+
+    dest.swap(src);
+    return true;
+}
+
+void DataParser::filter()
+{
+    set< uint32 > uniq_genes;
+    int           gene_thre = round(500 * pow((2 / 3.0), log2(2)));
+    for (int i = 0; i < label_num; ++i)
+    {
+        for (int j = 0; j < label_num; ++j)
+        {
+            if (i == j)
+                continue;
+            int pos = ref_train_idxs[(i * label_num + j) * 2];
+            int len = ref_train_idxs[(i * label_num + j) * 2 + 1];
+            if (len > gene_thre)
+                len = gene_thre;
+            uniq_genes.insert(ref_train_values.begin() + pos, ref_train_values.begin() + pos + len);
+            // cout<<"temp uniq genes size: "<<uniq_genes.size()<<endl;
+        }
+    }
+    cout << "useful genes: " << uniq_genes.size() << endl;
+    unordered_map< uint32, uint32 > gene_map;
+    size_t                          idx = 0;
+    for (auto v : uniq_genes)
+        gene_map[v] = idx++;
+
+    // re-construct trained data by filtering genes
+    vector< uint32 > _ctdiff;
+    vector< uint32 > _ctdidx;
+    size_t           start = 0;
+    for (size_t i = 0; i < ref_train_idxs.size(); i += 2)
+    {
+        auto s = ref_train_idxs[i];
+        auto l = ref_train_idxs[i + 1];
+        if (s == 0 && l == 0)
+        {
+            _ctdidx.push_back(0);
+            _ctdidx.push_back(0);
+        }
+        else
+        {
+            size_t ns = _ctdiff.size(), nl = 0;
+            for (size_t j = s; j < s + l; j++)
+            {
+                if (uniq_genes.count(ref_train_values[j]) == 0)
+                    continue;
+                _ctdiff.push_back(gene_map[ref_train_values[j]]);
+                nl++;
+            }
+            _ctdidx.push_back(ns);
+            _ctdidx.push_back(nl);
+        }
+    }
+    _ctdiff.swap(ref_train_values);
+    _ctdidx.swap(ref_train_idxs);
+
+    
+    // filter genes for ref data
+    filterGenes(raw_data.ref, ref_height, ref_width, uniq_genes);
+
+    // filter genes for qry data
+    filterGenes(raw_data.qry, qry_height, qry_width, uniq_genes);
+
+    raw_data.ref_width  = uniq_genes.size();
+    raw_data.qry_width = uniq_genes.size();
+    raw_data.ref_height = ref_height;
+    raw_data.qry_height = qry_height;
+}
+
+void DataParser::resort()
+{
+    vector< uint16 > dest;
+    dest.resize(raw_data.ref.size(), 0);
+    cout<<dest.size()<<endl;
+    // for (int i = 0; i < label_num; ++i)
+    // {
+    //     cout<<i<<" "<<ref_ctidx[i*2]<<" "<<ref_ctidx[i*2+1]<<endl;
+    // }
+    // cout<<ref_ctids.size()<<endl;
+
+    auto width = raw_data.ref_width;
+    auto task = [&](size_t start)
+    {
+        for (size_t i = start; i < label_num; i += thread_num)
+        {
+            size_t pos = ref_ctidx[i * 2];
+            size_t len = ref_ctidx[i * 2 + 1];
+            size_t idx = pos * width;
+            for (size_t j = pos; j < pos + len; ++j)
+            {
+                for (size_t k = 0; k < width; ++k)
+                    dest[idx++] = raw_data.ref[ref_ctids[j] * width + k];
+            }
+        }
+    };
+    vector< thread > threads;
+    for (int i = 0; i < thread_num; ++i)
+    {
+        thread th(task, i);
+        threads.push_back(std::move(th));
+    }
+    for (auto& th : threads)
+    {
+        th.join();
+    }
+
+    dest.swap(raw_data.ref);
+    for (uint32 i = 0; i < ref_ctids.size(); ++i)
+        ref_ctids[i] = i;
 }

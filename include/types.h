@@ -18,18 +18,19 @@ typedef unsigned long  uint64;
 
 struct InputData
 {
-    // unordered_map<string, string> obs;  // cell name => cell type
-    vector< string > obs_keys, obs_values;
+    vector<uint16> ref;  // expression matrix as reference, cell x gene
+    uint32         ref_height, ref_width;
 
-    vector< float > ref;  // expression matrix as reference, cell x gene
-    uint32          ref_cell_num, ref_gene_num;
+    vector<uint16> qry;  // expression matrix as query data, cell x gene
+    uint32         qry_height, qry_width;
 
-    vector< float > test;  // expression matrix as query data, cell x gene
-    uint32          test_cell_num, test_gene_num;
+    vector<float> labels;     // initial annotated cell types, cell x celltype
+    vector<char*> celltypes;  // celltypes order
+    int           ct_num;     // count of unique celltypes
 
-    vector< float >  labels;     // initial annotated cell types, cell x celltype
-    vector< string > celltypes;  // celltypes order
+    vector<uint32> ctdiff;  // gene index of between two cell types in ref data
+    vector<uint32> ctdidx;
 
-    unordered_map< string, vector< double > >
-        trained;  // median expression difference for celltypes
+    vector<uint32> ctids;  // cell index of each cell type in ref data
+    vector<uint32> ctidx;
 };

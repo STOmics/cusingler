@@ -25,10 +25,10 @@ int main(int argc, char** argv)
     {
         mod = stoi(argv[3]);
     }
-    Pipeline pipeline = Pipeline(filename);
-    pipeline.train(ref_h5, qry_h5);
-    // pipeline.preprocess();
-    // pipeline.work(mod);
+    Pipeline pipeline = Pipeline();
+    pipeline.train(filename, ref_h5, qry_h5);
+    pipeline.score();
+    pipeline.fintune(mod);
 
     return 0;
 }
