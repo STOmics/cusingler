@@ -222,7 +222,7 @@ vector<T> getDataset(Group& group, string name)
     data.resize(size);
     dataset.read(data.data(), datatype);
 
-    cout<<"data size: "<<data.size()<<endl;
+    // cout<<"data size: "<<data.size()<<endl;
     return data;
 }
 
@@ -246,6 +246,9 @@ bool DataParser::loadRefMatrix()
         ref_data = getDataset<float>(group, "data");
         ref_indices = getDataset<int>(group, "indices");
         ref_indptr = getDataset<int>(group, "indptr");
+
+        set<float> m(ref_data.begin(), ref_data.end());
+        cout<<"ref data uniq elements: "<<m.size()<<endl;
     }
 
     // Load celltypes of per cell
@@ -374,7 +377,63 @@ bool DataParser::trainData()
 DataParser::DataParser(string ref_file, string qry_file) : 
     ref_file(ref_file), qry_file(qry_file)
 {
+    filter_genes = false;
+}
 
+vector<char*> DataParser::getGeneIndex(string filename, string gene_index="")
+{
+    H5File* file = new H5File(filename.c_str(), H5F_ACC_RDONLY);
+    auto group(file->openGroup("/var"));
+    if (gene_index.empty())
+    {
+        Attribute attr(group.openAttribute("_index"));
+        auto datatype  = attr.getDataType();
+        attr.read(datatype, gene_index);
+    }
+    // cout<<"gene index: "<<gene_index<<endl;
+    auto res = getDataset<char*>(group, gene_index.c_str());
+
+    delete file;
+    return res;
+}
+
+bool DataParser::findIntersectionGenes()
+{
+    vector<char*> ref_genes, qry_genes;
+    // ref_genes = getGeneIndex(ref_file, "Symbol");
+    ref_genes = getGeneIndex(ref_file);
+    qry_genes = getGeneIndex(qry_file);
+    
+    set<string> ref_uniq_genes(ref_genes.begin(), ref_genes.end());
+    set<string> qry_uniq_genes(qry_genes.begin(), qry_genes.end());
+
+    set<string> common_uniq_genes;
+    std::set_intersection(ref_uniq_genes.begin(), ref_uniq_genes.end(), 
+        qry_uniq_genes.begin(), qry_uniq_genes.end(), std::inserter(common_uniq_genes, common_uniq_genes.begin()));
+
+    if (ref_uniq_genes.size() == qry_uniq_genes.size() && ref_uniq_genes.size() == common_uniq_genes.size())
+    {
+        filter_genes = false;
+        cout<<"Same genes in same order, genes size: "<<common_uniq_genes.size()<<endl;
+    }
+    else
+    {
+        filter_genes = true;
+        for (int i = 0; i < ref_genes.size(); ++i)
+        {
+            if (common_uniq_genes.count(ref_genes[i]) != 0)
+                ref_gene_index.insert(i);
+        }
+        for (int i = 0; i < qry_genes.size(); ++i)
+        {
+            if (common_uniq_genes.count(qry_genes[i]) != 0)
+                qry_gene_index.insert(i);
+        }
+        cout<<"Filter genes, qry genes reduce from "<<qry_genes.size()<<" to "<<qry_gene_index.size()
+            <<", ref genes reduce from "<<ref_genes.size()<<" to "<<ref_gene_index.size()<<endl;
+    }
+
+    return true;
 }
 
 bool DataParser::loadRefData()
@@ -428,6 +487,9 @@ bool DataParser::loadQryData()
 {
     loadQryMatrix();
 
+    // Logarithmize the data matrix
+    std::transform(qry_data.begin(), qry_data.end(), qry_data.begin(), [](float f){ return log2(f+1);});
+
     csr2dense(qry_data, qry_indptr, qry_indices, qry_width, qry_dense);
 
     cout<<"qry data shape: "<<qry_height <<" x "<<qry_width<<" non-zero number: "<<qry_data.size()<<endl;
@@ -455,6 +517,9 @@ bool DataParser::loadQryMatrix()
         qry_data = getDataset<float>(group, "data");
         qry_indices = getDataset<int>(group, "indices");
         qry_indptr = getDataset<int>(group, "indptr");
+
+        set<float> m(qry_data.begin(), qry_data.end());
+        cout<<"qry data uniq elements: "<<m.size()<<endl;
     }
 
     // clear resources

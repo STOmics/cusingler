@@ -238,11 +238,11 @@ void Pipeline::resort()
 
 Pipeline::Pipeline(string filename)
 {
-    cout << "start loading data." << endl;
-    if (!readInput(filename, rawdata))
-        cerr << "failed loading input h5 file." << endl;
-    else
-        cout << "success loading input h5 file." << endl;
+    // cout << "start loading data." << endl;
+    // if (!readInput(filename, rawdata))
+    //     cerr << "failed loading input h5 file." << endl;
+    // else
+    //     cout << "success loading input h5 file." << endl;
 }
 
 bool Pipeline::preprocess()
@@ -381,15 +381,10 @@ bool Pipeline::work(int mod)
 bool Pipeline::train(string ref_file, string qry_file)
 {
     cout << "start training ref data." << endl;
-    vector< uint32 > train_ctdiff;
-    vector< uint32 > train_ctdidx;
-    vector< uint32 > common_genes;
-    DataParser parser(ref_file, qry_file);
-    if (parser.loadRefData())
-        cerr << "success training ref data." << endl;
-    else
-        cout << "failed training ref data." << endl;
 
+    DataParser parser(ref_file, qry_file);
+    parser.findIntersectionGenes();
+    parser.loadRefData();
     parser.loadQryData();
 
     return true;

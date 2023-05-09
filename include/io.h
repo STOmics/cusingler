@@ -20,6 +20,7 @@ public:
     DataParser(string ref_file, string qry_file);
     ~DataParser(){};
 
+    bool findIntersectionGenes();
     bool loadRefData();
     bool loadQryData();
 
@@ -29,6 +30,8 @@ private:
     bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, int width, vector<float>& res);
 
     bool loadQryMatrix();
+
+    vector<char*> getGeneIndex(string filename, string gene_index);
 
 private:
     string ref_file;
@@ -56,4 +59,9 @@ private:
     vector<int> qry_indices;
     vector<int> qry_indptr;
     uint32 qry_height, qry_width;
+
+    // Filter genes in case there are differenet genes in ref and qry data
+    bool filter_genes;
+    set<uint32> ref_gene_index;
+    set<uint32> qry_gene_index;
 };
