@@ -704,17 +704,18 @@ float percentile(vector<float> arr, int len, float p)
     return res;
 }
 
-vector<float> get_label(InputData& rawdata,int mod)
+vector<uint32> get_label(InputData& rawdata,uint16* qry,int mod)
 {
     
     //get ref
 
     //get qry
+ 
     //speearman
     // compare with threshold
     vector<uint32> all_labels;
-    all_labels.resize(rawdata.celltypes.size());//34
-    for (int i=0;i<rawdata.celltypes.size();i++)//0-33
+    all_labels.resize(ct_num);//34
+    for (int i=0;i<ct_num;i++)//0-33
     {
         all_labels.push_back(i);
     }
@@ -722,7 +723,7 @@ vector<float> get_label(InputData& rawdata,int mod)
     set<uint32> uniq_genes;
     int gene_thre = round(500 * pow((2/3.0), log2(all_labels.size())));
 
-    for (auto& i : all_labels)//??line 159  topl cant be 0??
+    for (auto& i : all_labels)
     {
         for (auto& j : all_labels)
         {
@@ -733,10 +734,128 @@ vector<float> get_label(InputData& rawdata,int mod)
             if (len > gene_thre)
                 len = gene_thre;
             uniq_genes.insert(h_ctdiff.begin()+pos, h_ctdiff.begin()+pos+len);
-            // cout<<"temp uniq genes size: "<<uniq_genes.size()<<endl;
+             cout<<"all uniq genes size: "<<uniq_genes.size()<<endl;
         }
     }
+
+    vector<uint32> h_gene_idx(uniq_genes.begin(), uniq_genes.end());
+
+    // transfer qry data from cpu to gpu
+    CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
+    get_device_qry_line<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_gene_idx, qry, h_gene_idx.size(), qry_width, d_qry_line);
+           err = cudaGetLastError();
+        if (err != cudaSuccess )
+        {
+            printf("get_device_qry_line CUDA Error: %s\n", cudaGetErrorString(err));
+        }     
+    // get rank of qry data   
+    rankdata<<<(h_gene_idx.size()-1)/1024 + 1, 1024>>>(d_qry_line, d_qry_rank, h_gene_idx.size());
+               err = cudaGetLastError();
+        if (err != cudaSuccess )
+        {
+            printf("qry rank CUDA Error: %s\n", cudaGetErrorString(err));
+        }   
+    vector<pair<size_t, size_t>> temp;
+    size_t total_len = 0;
+    for (auto& label : all_labels)
+    {
+        uint32 pos = h_ctidx[label * 2];
+        uint32 len = h_ctidx[label * 2 + 1];
+        // cout<<label<<" "<<pos<<" "<<len<<endl;
+        if (temp.empty() || (temp.back().first + temp.back().second) != pos)
+        {
+            temp.push_back({pos,len});
+            total_len += len;
+        }
+        else
+        {
+            temp.back().second += len;
+            total_len += len;
+        }
+    }
+    vector<uint32> h_cell_idx(total_len);
+    total_len = 0;
+    //for (auto& [pos, len] : temp)
+    for(auto&tmp:temp)
+    {
+        size_t pos=tmp.first;
+        size_t len=tmp.second;
+        std::iota(h_cell_idx.begin()+total_len, h_cell_idx.begin()+total_len+len, pos);
+        // cout<<total_len<<" "<<total_len+len<<" "<<pos<<endl;
+        total_len += len;
+    }
+     CHECK(cudaMemcpy(d_cell_idx, h_cell_idx.data(), h_cell_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
+    // dim3 blockDim(32, 32);
+    // dim3 gridDim((h_cell_idx.size()-1)/32+1, (h_gene_idx.size()-1)/32+1);
+    dim3 blockDim(1, 512);
+    dim3 gridDim(h_cell_idx.size(), h_gene_idx.size()/512+1);
+    get_device_ref_lines<<< gridDim, blockDim >>>
+            (d_gene_idx, h_gene_idx.size(), d_cell_idx, h_cell_idx.size(), d_ref, ref_width, (uint64)pitchref, d_ref_lines);
+
+    CHECK(cudaGetLastError());
+
+    if(mod==0)
+    {
+        rankdata_bin3<<< total_len, 64>>>(d_ref_lines, h_gene_idx.size(), total_len, d_ref_rank);
+        err = cudaGetLastError();
+        if (err != cudaSuccess )
+        {
+            printf("rankdata_bin3 CUDA Error: %s\n", cudaGetErrorString(err));
+        }
+    }
+    else if(mod==1)
+    {
+        //len=h_cell_idx.size()
+        rankdata_batch<<<(h_cell_idx.size()*h_gene_idx.size()-1)/512+1,512>>>(d_ref_lines,d_ref_rank,h_gene_idx.size(),h_cell_idx.size());
+        err = cudaGetLastError();
+        if (err != cudaSuccess )
+        {
+            printf("rankdata_batch CUDA Error: %s\n", cudaGetErrorString(err));
+        }
+    }
+    spearman_reduce<<< total_len, 128 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
+
+    cudaError_t err = cudaGetLastError();
+    if( err != cudaSuccess) std::cout << "Error: " << cudaGetErrorString(err) << std::endl;
+
+    vector<float> h_score;
     
+    CHECK( cudaMemcpy(h_score.data(), d_score, total_len*sizeof(float), cudaMemcpyDeviceToHost));
+    uint32 start = 0;
+    total_len = 0;
+    vector<float> scores;
+     for (auto& label : all_labels)
+    {
+        uint32 len = h_ctidx[label * 2 + 1]; // const len will be moved ouut of circle later
+        total_len += len;
+        
+        vector<float> tmp(h_score.begin()+start, h_score.begin()+total_len);
+        float score = percentile(tmp, len, 0.8);
+        // cout<<label<<" score: "<<score<<endl;
+        scores.push_back(score);
+        start += len;
+        // cudaMemset(d_ref_lines, 0, h_gene_idx.size() * len * sizeof(float));
+    } 
+    auto ele = std::minmax_element(scores.begin(), scores.end());
+    float thre = *ele.second - 0.05;//max-0.05
+    vector<uint32> top_label;
+    cout<<"score_size"<<scores.size()<<endl;
+    for (int i=0;i<34;i++)
+    {
+        cout<<scores[i]<<endl;
+    }
+    //set toplabel 1/0 compare thres
+    for (int i = 0; i < scores.size(); ++i)
+    {
+        if (scores[i] >=thre) 
+            top_label.push_back(all_labels[i]);
+    }
+
+    for (int i=0;i<top_label.size();i++)
+    {
+        cout<<top_label[i]<<endl;
+    }
+    return top_label;
 
 }
 vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int mod)
