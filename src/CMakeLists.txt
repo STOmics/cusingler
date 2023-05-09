@@ -6,8 +6,8 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
 endif()
 
 
-set(CMAKE_CXX_FLAGS "-std=c++17 -O2 -DNDEBUG  -W -Wall -pedantic -fopenmp -lpthread -lrt -lz ")
-# set(CMAKE_CXX_FLAGS "-std=c++17 -g -DEBUG  -W -Wall -pedantic -fopenmp -lpthread -lrt -lz")
+#set(CMAKE_CXX_FLAGS "-std=c++17 -O2 -DNDEBUG  -W -Wall -pedantic -fopenmp -lpthread -lrt -lz ")
+set(CMAKE_CXX_FLAGS "-std=c++17 -g -DEBUG  -W -Wall -pedantic -fopenmp -lpthread -lrt -lz")
 
 include_directories(../include)
 

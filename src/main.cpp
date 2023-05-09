@@ -25,6 +25,7 @@ int main(int argc, char** argv)
     }
     Pipeline pipeline = Pipeline(filename);
     pipeline.preprocess();
+    pipeline.score_data(mod);
     pipeline.work(mod);
 
     return 0;

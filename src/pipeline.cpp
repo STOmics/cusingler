@@ -242,17 +242,20 @@ bool Pipeline::score_data(int mod)
         cerr<<"invalid mod."<<endl;
         exit(-1);
     }
+
+    init();
+
+
+    copyin(rawdata, ctids, ctidx, ctdiff, ctdidx, ref, qry);
+    
     cout<<"score_data"<<endl;
     //get score
     get_label(rawdata,mod);
 
     //compare with threshold
-
-
-
     //todo
    
-
+    getchar();
     //flip
 
 

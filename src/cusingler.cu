@@ -704,57 +704,36 @@ float percentile(vector<float> arr, int len, float p)
     return res;
 }
 
-vector<uint32> get_label(InputData& rawdata,uint16* qry,int mod)
+vector<uint32> get_label(InputData& rawdata,int mod)
 {
-    
-    //get ref
-
-    //get qry
- 
-    //speearman
-    // compare with threshold
+    //get all genes
     vector<uint32> all_labels;
     all_labels.resize(ct_num);//34
-    for (int i=0;i<ct_num;i++)//0-33
+    for (int i=0;i<ct_num;i++)//0-33 set label
     {
         all_labels.push_back(i);
     }
-
-    set<uint32> uniq_genes;
+    set<uint32> all_genes;
     int gene_thre = round(500 * pow((2/3.0), log2(all_labels.size())));
 
     for (auto& i : all_labels)
     {
         for (auto& j : all_labels)
         {
-            if (i == j)//same cant be 0?
+            if (i == j)
                 continue;
             int pos = h_ctdidx[(i * ct_num + j) * 2];
             int len = h_ctdidx[(i * ct_num + j) * 2 + 1];
             if (len > gene_thre)
                 len = gene_thre;
-            uniq_genes.insert(h_ctdiff.begin()+pos, h_ctdiff.begin()+pos+len);
-             cout<<"all uniq genes size: "<<uniq_genes.size()<<endl;
+            all_genes.insert(h_ctdiff.begin()+pos, h_ctdiff.begin()+pos+len);
+        
         }
     }
+    cout<<"all uniq genes size: "<<all_genes.size()<<endl;
+    vector<uint32> h_gene_idx(all_genes.begin(), all_genes.end());
 
-    vector<uint32> h_gene_idx(uniq_genes.begin(), uniq_genes.end());
-
-    // transfer qry data from cpu to gpu
-    CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
-    get_device_qry_line<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_gene_idx, qry, h_gene_idx.size(), qry_width, d_qry_line);
-           err = cudaGetLastError();
-        if (err != cudaSuccess )
-        {
-            printf("get_device_qry_line CUDA Error: %s\n", cudaGetErrorString(err));
-        }     
-    // get rank of qry data   
-    rankdata<<<(h_gene_idx.size()-1)/1024 + 1, 1024>>>(d_qry_line, d_qry_rank, h_gene_idx.size());
-               err = cudaGetLastError();
-        if (err != cudaSuccess )
-        {
-            printf("qry rank CUDA Error: %s\n", cudaGetErrorString(err));
-        }   
+    // get ref rank  rank is same in all circles
     vector<pair<size_t, size_t>> temp;
     size_t total_len = 0;
     for (auto& label : all_labels)
@@ -784,7 +763,8 @@ vector<uint32> get_label(InputData& rawdata,uint16* qry,int mod)
         // cout<<total_len<<" "<<total_len+len<<" "<<pos<<endl;
         total_len += len;
     }
-     CHECK(cudaMemcpy(d_cell_idx, h_cell_idx.data(), h_cell_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
+    
+    CHECK(cudaMemcpy(d_cell_idx, h_cell_idx.data(), h_cell_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
     // dim3 blockDim(32, 32);
     // dim3 gridDim((h_cell_idx.size()-1)/32+1, (h_gene_idx.size()-1)/32+1);
     dim3 blockDim(1, 512);
@@ -793,7 +773,6 @@ vector<uint32> get_label(InputData& rawdata,uint16* qry,int mod)
             (d_gene_idx, h_gene_idx.size(), d_cell_idx, h_cell_idx.size(), d_ref, ref_width, (uint64)pitchref, d_ref_lines);
 
     CHECK(cudaGetLastError());
-
     if(mod==0)
     {
         rankdata_bin3<<< total_len, 64>>>(d_ref_lines, h_gene_idx.size(), total_len, d_ref_rank);
@@ -813,28 +792,46 @@ vector<uint32> get_label(InputData& rawdata,uint16* qry,int mod)
             printf("rankdata_batch CUDA Error: %s\n", cudaGetErrorString(err));
         }
     }
-    spearman_reduce<<< total_len, 128 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
-
-    cudaError_t err = cudaGetLastError();
-    if( err != cudaSuccess) std::cout << "Error: " << cudaGetErrorString(err) << std::endl;
-
-    vector<float> h_score;
+    cout<<"ref rank end "<<endl;
+    //get all qry rank and calculate score
+    for (int i = 0; i < qry_height; ++i)
+    {
+        uint16* qry_head = (uint16*)((char*)d_qry + i * pitchqry);
+        CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
+        get_device_qry_line<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_gene_idx, d_qry, h_gene_idx.size(), qry_width, d_qry_line);
+        err = cudaGetLastError();
+        if (err != cudaSuccess )
+        {
+            printf("get_device_qry_line CUDA Error: %s\n", cudaGetErrorString(err));
+        }     
+        // get rank of qry data   cell i
+        rankdata<<<(h_gene_idx.size()-1)/1024 + 1, 1024>>>(d_qry_line, d_qry_rank, h_gene_idx.size());
+               err = cudaGetLastError();
+        if (err != cudaSuccess )
+        {
+            printf("qry rank CUDA Error: %s\n", cudaGetErrorString(err));
+        }   
+        spearman_reduce<<< total_len, 128 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
+        cudaError_t err = cudaGetLastError();
+        if( err != cudaSuccess) std::cout << "Error: " << cudaGetErrorString(err) << std::endl;
+        //spearman end
+         vector<float> h_score;
     
     CHECK( cudaMemcpy(h_score.data(), d_score, total_len*sizeof(float), cudaMemcpyDeviceToHost));
     uint32 start = 0;
     total_len = 0;
     vector<float> scores;
-     for (auto& label : all_labels)
+    for (auto& label : all_labels)
     {
-        uint32 len = h_ctidx[label * 2 + 1]; // const len will be moved ouut of circle later
+        uint32 len = h_ctidx[label * 2 + 1]; // const len will be moved out of circle later
         total_len += len;
         
         vector<float> tmp(h_score.begin()+start, h_score.begin()+total_len);
         float score = percentile(tmp, len, 0.8);
-        // cout<<label<<" score: "<<score<<endl;
+
         scores.push_back(score);
         start += len;
-        // cudaMemset(d_ref_lines, 0, h_gene_idx.size() * len * sizeof(float));
+     
     } 
     auto ele = std::minmax_element(scores.begin(), scores.end());
     float thre = *ele.second - 0.05;//max-0.05
@@ -850,14 +847,20 @@ vector<uint32> get_label(InputData& rawdata,uint16* qry,int mod)
         if (scores[i] >=thre) 
             top_label.push_back(all_labels[i]);
     }
-
+    //for test check toplabel***************
     for (int i=0;i<top_label.size();i++)
     {
         cout<<top_label[i]<<endl;
     }
-    return top_label;
+    //for test check toplabel***************
+
+    }
+    
+  
+  
 
 }
+
 vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int mod)
 {
 
