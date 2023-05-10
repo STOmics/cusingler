@@ -244,21 +244,12 @@ bool Pipeline::score_data(int mod)
     }
 
     init();
-
-
     copyin(rawdata, ctids, ctidx, ctdiff, ctdidx, ref, qry);
     
     cout<<"score_data"<<endl;
     //get score
     get_label(rawdata,mod);
-
-    //compare with threshold
-    //todo
-   
     getchar();
-    //flip
-
-
     return true;
 }
 
@@ -380,10 +371,10 @@ bool Pipeline::work(int mod)
     }
     cout<<"work()"<<endl;
 
-    init();
+    init();  //init and copy  in scoredata
 
 
-    copyin(rawdata, ctids, ctidx, ctdiff, ctdidx, ref, qry);
+   copyin(rawdata, ctids, ctidx, ctdiff, ctdidx, ref, qry);
 
     Timer timer("ms");
     auto res = finetune(mod);
