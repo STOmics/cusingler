@@ -666,6 +666,7 @@ float percentile(vector< float > arr, int len, float p)
 
 vector<uint32> get_label(InputData& rawdata,int mod)
 {
+   
     //get all genes
     vector<uint32> all_labels;
     all_labels.resize(ct_num);//34
@@ -788,6 +789,8 @@ vector<uint32> get_label(InputData& rawdata,int mod)
     //get all qry rank and calculate score
     for (int j = 0; j < qry_height; ++j)
     {
+        if (j%1000==0)
+            cout<<j<<"cell proc"<<endl;
         uint16* qry_head = (uint16*)((char*)d_qry + j * pitchqry);
         //CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
         get_device_qry_line<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_gene_idx, qry_head, h_gene_idx.size(), qry_width, d_qry_line);
@@ -813,7 +816,7 @@ vector<uint32> get_label(InputData& rawdata,int mod)
         // cout<<dev_ptr3[i]<<" ";
         // }
         // getchar();
-        cout<<"qry rank end "<<endl;
+      //  cout<<"qry rank end "<<endl;
         if (err != cudaSuccess )
         {
             printf("qry rank CUDA Error: %s\n", cudaGetErrorString(err));
@@ -849,7 +852,7 @@ vector<uint32> get_label(InputData& rawdata,int mod)
         
         vector<float> tmp(h_score.begin()+start, h_score.begin()+total_len);
         float score = percentile(tmp, len, 0.8);
-        cout<<score<<endl;
+       // cout<<score<<endl;
         scores.push_back(score);
         start += len;
      
@@ -858,11 +861,11 @@ vector<uint32> get_label(InputData& rawdata,int mod)
     auto ele = std::minmax_element(scores.begin(), scores.end());
     float thre = *ele.second - 0.05;//max-0.05
     vector<uint32> top_label;
-    cout<<"Thold"<<thre<<endl;
-    for (int i=0;i<scores.size();i++)
-    {
-        cout<<scores[i]<<endl;
-    }
+    //cout<<"Thold"<<thre<<endl;
+    // for (int i=0;i<scores.size();i++)
+    // {
+    //     cout<<scores[i]<<endl;
+    // }
     //set toplabel 1/0 compare thres
     for (int i = 0; i < scores.size(); ++i)
     {
@@ -870,19 +873,18 @@ vector<uint32> get_label(InputData& rawdata,int mod)
             top_label.push_back(all_labels[i]);
     }
     //for test check toplabel***************
-    cout<<"top_label.size"<<top_label.size()<<endl;
+    // cout<<"top_label.size"<<top_label.size()<<endl;
     start=j*ct_num;//j=cell idx
     for (int i=start;i<start+ct_num;i++)
         rawdata.labels[i]=0;
     //set label
     for (int i=0;i<top_label.size();i++)
     {
-        cout<<top_label[i]<<endl;
+      //  cout<<top_label[i]<<endl;
         rawdata.labels[j+top_label[i]]=1;
-    }
+    }    
     
-
-
+    
 
     
     //for test check toplabel***************
@@ -1124,11 +1126,11 @@ vector< uint32 > finetune(int mod)
             if (h_labels.at(start + pos) != 0)
                 top_labels.push_back(pos);
         }
-        for(int id=0;id<top_labels.size();id++)
-            cout<<top_labels[id]<<endl;
+
         while (top_labels.size() > 1)
         {
-            cout<<top_labels.size();
+            // for(int id=0;id<top_labels.size();id++)
+            //     cout<<top_labels[id];
            // cout<<"top_labels size"<<top_labels.size()<<endl;
             top_labels = finetune_round(qry_head, top_labels,mod);
             // for (auto& label : top_labels)

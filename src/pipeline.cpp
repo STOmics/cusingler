@@ -251,7 +251,9 @@ bool Pipeline::score_data(int mod)
     
     cout<<"score_data"<<endl;
     //get score
+    Timer timer("ms");
     get_label(rawdata,mod);
+    cout << "get_label cost time(ms): " << timer.toc() << endl;
     getchar();
     return true;
 }
