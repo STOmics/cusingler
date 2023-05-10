@@ -1158,7 +1158,8 @@ vector<uint32> finetune(int mod)
             if (h_labels.at(start + pos) != 0)
                 top_labels.push_back(pos);
         }
-
+        for(int id=0;id<top_labels.size();id++)
+            cout<<top_labels[id]<<endl;
         while (top_labels.size() > 1)
         {
             cout<<top_labels.size();
