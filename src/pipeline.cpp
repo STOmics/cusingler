@@ -28,7 +28,7 @@ Pipeline::Pipeline()
 }
 
 
-bool Pipeline::fintune(int mod)
+bool Pipeline::finetune(int mod)
 {
     if (mod == 0)
         cout << "rank by bin" << endl;

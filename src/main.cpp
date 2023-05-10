@@ -21,14 +21,14 @@ int main(int argc, char** argv)
     string ref_h5(argv[2]);
     string qry_h5(argv[3]);
     int    mod = 0;
-    if (argc == 4)
+    if (argc == 5)
     {
-        mod = stoi(argv[3]);
+        mod = stoi(argv[4]);
     }
     Pipeline pipeline = Pipeline();
     pipeline.train(filename, ref_h5, qry_h5);
     pipeline.score();
-    pipeline.fintune(mod);
+    pipeline.finetune(mod);
 
     return 0;
 }

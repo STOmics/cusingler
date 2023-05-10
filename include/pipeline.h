@@ -21,7 +21,7 @@ public:
 
     bool train(string filename, string ref_file, string qry_file);
     bool score();
-    bool fintune(int mod);
+    bool finetune(int mod);
 
 // private:
     // bool score_data();
