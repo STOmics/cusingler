@@ -880,8 +880,8 @@ vector<uint32> get_label(InputData& rawdata,int mod)
     //set label
     for (int i=0;i<top_label.size();i++)
     {
-        // cout<<top_label[i]<<endl;
-        rawdata.labels[j*ct_num+top_label[i]]=1;
+      //  cout<<top_label[i]<<endl;
+        rawdata.labels[start+top_label[i]]=1;
     }    
     
     
