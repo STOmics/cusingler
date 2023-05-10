@@ -827,9 +827,9 @@ vector<uint32> get_label(InputData& rawdata,int mod)
     }
     cout<<"ref rank end "<<endl;
     //get all qry rank and calculate score
-    for (int i = 0; i < qry_height; ++i)
+    for (int j = 0; j < qry_height; ++j)
     {
-        uint16* qry_head = (uint16*)((char*)d_qry + i * pitchqry);
+        uint16* qry_head = (uint16*)((char*)d_qry + j * pitchqry);
         //CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
         get_device_qry_line<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_gene_idx, qry_head, h_gene_idx.size(), qry_width, d_qry_line);
         err = cudaGetLastError();
@@ -912,17 +912,26 @@ vector<uint32> get_label(InputData& rawdata,int mod)
     }
     //for test check toplabel***************
     cout<<"top_label.size"<<top_label.size()<<endl;
+    start=j*ct_num;//j=cell idx
+    for (int i=start;i<start+ct_num;i++)
+        rawdata.labels[i]=0;
+    //set label
     for (int i=0;i<top_label.size();i++)
     {
         cout<<top_label[i]<<endl;
+        rawdata.labels[j+top_label[i]]=1;
     }
-  
+    
+
+
+
+    
     //for test check toplabel***************
 
     }
     
   cout<<"get end"<<endl;
-  return all_labels;
+  return all_labels;//  no  return value  change func getlabel to bool later
 
 }
 
@@ -1134,7 +1143,7 @@ vector<uint32> finetune(int mod)
     // process each cell
     vector<uint32> res;
     cout<<"cell num:"<<qry_height<<endl;
-
+    std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
     // for (int i = 0; i < 1; ++i)
     //for (int i = 26; i < 27; ++i)
     for (int i = 0; i < qry_height; ++i)
@@ -1152,11 +1161,13 @@ vector<uint32> finetune(int mod)
 
         while (top_labels.size() > 1)
         {
+            cout<<top_labels.size();
            // cout<<"top_labels size"<<top_labels.size()<<endl;
             top_labels = finetune_round(qry_head, top_labels,mod);
             // for (auto& label : top_labels)
             //     cout<<label<<endl;
         }
+
         res.push_back(top_labels.front());
         if (i % 100 == 0)
         {

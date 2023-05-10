@@ -371,10 +371,10 @@ bool Pipeline::work(int mod)
     }
     cout<<"work()"<<endl;
 
-    init();  //init and copy  in scoredata
+   // init();  //init and copy  in scoredata
 
 
-   copyin(rawdata, ctids, ctidx, ctdiff, ctdidx, ref, qry);
+  // copyin(rawdata, ctids, ctidx, ctdiff, ctdidx, ref, qry);
 
     Timer timer("ms");
     auto res = finetune(mod);
