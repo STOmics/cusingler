@@ -24,8 +24,7 @@
 class Timer
 {
 public:
-    Timer(std::string unit = "s")
-        : unit(unit), start_time(mics_duration::zero())
+    Timer(std::string unit = "s") : unit(unit), start_time(mics_duration::zero())
     {
         if (unit == "s")
             div = 1e6;
