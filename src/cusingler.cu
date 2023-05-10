@@ -342,9 +342,9 @@ bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, ve
     // ref_lines_width=4096;
     // CHECK(cudaMallocPitch((void**)&d_ref_lines,&pitch_ref_lines,ref_lines_width*sizeof(uint16),ref_height));
 
-    CHECK(cudaMalloc((void**)&d_ref_lines, 200000000 * sizeof(uint16));)                               
-    cudaMalloc((void**)&d_ref_rank, 200000000 * sizeof(float));
-    cudaMalloc((void**)&d_score,100000* sizeof(float));
+    CHECK(cudaMalloc((void**)&d_ref_lines, 2000000000 * sizeof(uint16));)                  //max=  genes            
+    cudaMalloc((void**)&d_ref_rank, 2000000000 * sizeof(float));
+    cudaMalloc((void**)&d_score,1000000* sizeof(float));
 
     std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
 
@@ -808,12 +808,12 @@ vector<uint32> get_label(InputData& rawdata,int mod)
             printf("rankdata_bin3 CUDA Error: %s\n", cudaGetErrorString(err));
         }
 
-        thrust::device_ptr<float> dev_ptr(d_ref_rank);
-        for(int i=0;i<10;i++)
-        {
-        cout<<dev_ptr[i]<<" ";
-        }
-        getchar();
+        // thrust::device_ptr<float> dev_ptr(d_ref_rank);
+        // for(int i=0;i<10;i++)
+        // {
+        // cout<<dev_ptr[i]<<" ";
+        // }
+        // getchar();
     }
     else if(mod==1)
     {
@@ -830,7 +830,7 @@ vector<uint32> get_label(InputData& rawdata,int mod)
     for (int i = 0; i < qry_height; ++i)
     {
         uint16* qry_head = (uint16*)((char*)d_qry + i * pitchqry);
-        CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
+        //CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
         get_device_qry_line<<< h_gene_idx.size()/1024 + 1, 1024 >>>(d_gene_idx, qry_head, h_gene_idx.size(), qry_width, d_qry_line);
         err = cudaGetLastError();
         if (err != cudaSuccess )
@@ -840,20 +840,20 @@ vector<uint32> get_label(InputData& rawdata,int mod)
         // get rank of qry data   cell i
         rankdata<<<(h_gene_idx.size()-1)/1024 + 1, 1024>>>(d_qry_line, d_qry_rank, h_gene_idx.size());
                err = cudaGetLastError();
-        thrust::device_ptr<uint16> dev_ptr2(d_qry_line);
-        for(int i=0;i<10;i++)
-        {
+        // thrust::device_ptr<uint16> dev_ptr2(d_qry_line);
+        // for(int i=0;i<10;i++)
+        // {
 
-        cout<<dev_ptr2[i]<<" ";
-        }
-        getchar();
-        thrust::device_ptr<float> dev_ptr3(d_qry_rank);
-        for(int i=0;i<10;i++)
-        {
+        // cout<<dev_ptr2[i]<<" ";
+        // }
+        // getchar();
+        // thrust::device_ptr<float> dev_ptr3(d_qry_rank);
+        // for(int i=0;i<10;i++)
+        // {
 
-        cout<<dev_ptr3[i]<<" ";
-        }
-        getchar();
+        // cout<<dev_ptr3[i]<<" ";
+        // }
+        // getchar();
         cout<<"qry rank end "<<endl;
         if (err != cudaSuccess )
         {
@@ -899,7 +899,7 @@ vector<uint32> get_label(InputData& rawdata,int mod)
     auto ele = std::minmax_element(scores.begin(), scores.end());
     float thre = *ele.second - 0.05;//max-0.05
     vector<uint32> top_label;
-    cout<<"Thold"<<thre;
+    cout<<"Thold"<<thre<<endl;
     for (int i=0;i<scores.size();i++)
     {
         cout<<scores[i]<<endl;
@@ -921,8 +921,8 @@ vector<uint32> get_label(InputData& rawdata,int mod)
 
     }
     
-  
-  
+  cout<<"get end"<<endl;
+  return all_labels;
 
 }
 
@@ -1009,13 +1009,13 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
     // dim3 gridDim((h_cell_idx.size()-1)/32+1, (h_gene_idx.size()-1)/32+1);
     dim3 blockDim(1, 512);
     dim3 gridDim(h_cell_idx.size(), h_gene_idx.size()/512+1);
-            thrust::device_ptr<uint16> dev_ptr5(d_ref);
-        for(int i=0;i<h_gene_idx.size()*2;i++)
-        {
+        // thrust::device_ptr<uint16> dev_ptr5(d_ref);
+        // for(int i=0;i<h_gene_idx.size()*2;i++)
+        // {
 
-        cout<<dev_ptr5[i]<<" ";
-        }
-        getchar();
+        // cout<<dev_ptr5[i]<<" ";
+        // }
+        // getchar();
 
     
     get_device_ref_lines<<< gridDim, blockDim >>>
