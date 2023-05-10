@@ -16,12 +16,44 @@
 #include <thread>
 using namespace std;
 
-// bool Pipeline::score_data()
-// {
-//     //todo
-// }
 
 
+bool Pipeline::score(int mod)
+{
+    if(mod == 0)
+        cout<<"score_data by bin"<<endl;
+    else if (mod==1)
+    {
+        cout<<"score_data by cnt"<<endl;
+    }
+    else
+    {
+        cerr<<"invalid mod."<<endl;
+        exit(-1);
+    }
+
+    init();
+    copyin(raw_data, raw_data.ctids, raw_data.ctidx, raw_data.ctdiff, raw_data.ctdidx, raw_data.ref, raw_data.qry);
+    
+    cout<<"score_data"<<endl;
+    //get score
+    Timer timer("ms");
+
+    auto py_labels = raw_data.labels;
+
+    get_label(raw_data, mod);
+    cout << "get_label cost time(ms): " << timer.toc() << endl;
+
+    size_t res = 0;
+    for (int i = 0; i < raw_data.labels.size(); ++i)
+    {
+        if (raw_data.labels[i] != py_labels[i])
+            res++;
+    }
+    cout<<"labels size: "<<py_labels.size()<<" diff size: "<<res<<endl;;
+
+    return true;
+}
 
 Pipeline::Pipeline()
 {
@@ -43,16 +75,16 @@ bool Pipeline::finetune(int mod)
     }
     cout << "work()" << endl;
 
-    init();
+   // init();  //init and copy  in scoredata
 
     copyin(raw_data, raw_data.ctids, raw_data.ctidx, raw_data.ctdiff, raw_data.ctdidx, raw_data.ref, raw_data.qry);
 
     Timer timer("ms");
-    auto  res = finetune(mod);
+    auto  res = cufinetune(mod);
     cout << "finetune cost time(ms): " << timer.toc() << endl;
 
-    // for (auto& c : res)
-    //     cout<<raw_data.celltypes[c]<<endl;
+    for (auto& c : res)
+        cout<<raw_data.celltypes[c]<<endl;
     unordered_map< uint32, uint32 > m;
 
     // for (auto& [k,v] : m)
@@ -76,10 +108,5 @@ bool Pipeline::train(string filename, string ref_file, string qry_file)
     raw_data = parser.raw_data;
     readLabels(filename, raw_data);
 
-    return true;
-}
-
-bool Pipeline::score()
-{
     return true;
 }

@@ -27,7 +27,7 @@ int main(int argc, char** argv)
     }
     Pipeline pipeline = Pipeline();
     pipeline.train(filename, ref_h5, qry_h5);
-    pipeline.score();
+    pipeline.score(mod);
     pipeline.finetune(mod);
 
     return 0;

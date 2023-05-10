@@ -20,13 +20,11 @@ public:
     ~Pipeline(){};
 
     bool train(string filename, string ref_file, string qry_file);
-    bool score();
+    bool score(int mod);
     bool finetune(int mod);
-
-// private:
-    // bool score_data();
     
 
+    
 private:
     InputData        raw_data;
 
