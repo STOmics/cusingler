@@ -33,9 +33,8 @@ bool Pipeline::score(int mod)
     }
 
     init();
-    copyin(raw_data, raw_data.ctids, raw_data.ctidx, raw_data.ctdiff, raw_data.ctdidx, raw_data.ref, raw_data.qry);
+    copyin_score(raw_data);
     
-    cout<<"score_data"<<endl;
     //get score
     Timer timer("ms");
 
@@ -47,10 +46,18 @@ bool Pipeline::score(int mod)
     size_t res = 0;
     for (int i = 0; i < raw_data.labels.size(); ++i)
     {
+        // if (i < 34)
+        // {
+        //     cout<<py_labels[i]<<" "<<raw_data.labels[i] <<endl;
+        // }
         if (raw_data.labels[i] != py_labels[i])
+        {
+            cout<<i<<" "<<py_labels[i]<<" "<<raw_data.labels[i] <<" "<< i / raw_data.ct_num<<endl;
             res++;
+        }
     }
-    cout<<"labels size: "<<py_labels.size()<<" diff size: "<<res<<endl;;
+    cout<<"labels size: "<<py_labels.size()<<" diff size: "<<res<<endl;
+    destroy_score();
 
     return true;
 }

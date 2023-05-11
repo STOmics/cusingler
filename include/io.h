@@ -29,6 +29,7 @@ private:
     bool trainData();
     bool loadRefMatrix();
     bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, int width, vector<float>& res);
+    bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, set<uint32>& cols, vector<float>& res);
 
     bool loadQryMatrix();
 
@@ -74,6 +75,7 @@ private:
     vector<int> qry_indices;
     vector<int> qry_indptr;
     uint32 qry_height, qry_width;
+    vector<char*> genes;
 
     // Filter genes in case there are differenet genes in ref and qry data
     bool filter_genes;

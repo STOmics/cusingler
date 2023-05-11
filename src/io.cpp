@@ -166,10 +166,14 @@ bool DataParser::trainData()
     uint32 idx_start = 0;
     size_t gene_thre = round(500 * pow((2 / 3.0), log2(uniq_celltypes.size())));
 
+    // set<uint32> exclude_genes{2034, 2599, 6326, 7525, 7637, 8125, 9321, 10246, 13544, 17496};
     for (auto& [k1, v1] : median_map)
     {
         for (auto& [k2, v2] : median_map)
         {
+            // if (k1 != 6 || k2 != 17)
+            //     continue;
+
             if (k1 == k2)
             {
                 // padding zero
@@ -195,6 +199,7 @@ bool DataParser::trainData()
                 ref_train_values.push_back(diff[i].second);
             }
             // cout<<uniq_celltypes[k1]<<"-"<<uniq_celltypes[k2]<<" "<<i<<endl;
+            // cout.precision(8);
             // for (int j = 0; j < i; ++j)
             //     cout<<"score: "<<diff[j].first<<" "<<diff[j].second<<endl;
             ref_train_idxs.push_back(idx_start);
@@ -203,11 +208,25 @@ bool DataParser::trainData()
             // Collect common genes in top N
             for (int i = 0; i < gene_thre; ++i)
             {
-                common_genes.insert(diff[i].second);
+                common_genes.insert(ref_width-diff[i].second-1);
+                // common_genes.insert(diff[i].second);
+                // cout<<diff[i].second<<endl;
+                // cout<<genes[ref_width-diff[i].second-1]<<endl;
             }
+            // for (auto& g : exclude_genes)
+            //     if (common_genes.count(g) != 0)
+            //     {
+            //         cout<<g<<" "<<int(k1)<<" "<<int(k2)<<endl;
+            //         exit(0);
+
+            //     }
+            // exit(0);
 
         }
     }
+    // for (auto& g : common_genes)
+    //     cout<<g<<endl;
+    // exit(0);
     cout<<"common genes size: "<<common_genes.size()<<endl;
     cout<<"ref_train_idxs size: "<<ref_train_idxs.size()<<endl;
     cout<<"ref_train_values size: "<<ref_train_values.size()<<endl;
@@ -245,6 +264,9 @@ bool DataParser::findIntersectionGenes()
     // ref_genes = getGeneIndex(ref_file, "Symbol");
     ref_genes = getGeneIndex(ref_file);
     qry_genes = getGeneIndex(qry_file);
+
+    genes = ref_genes;
+    // cout<<genes[8277]<<" "<<genes[8278]<<" "<<genes[8279]<<endl;
     
     set<string> ref_uniq_genes(ref_genes.begin(), ref_genes.end());
     set<string> qry_uniq_genes(qry_genes.begin(), qry_genes.end());
@@ -295,7 +317,14 @@ bool DataParser::loadRefData()
     trainData();
 
     // Transform matrix format from csr to dense
-    csr2dense(ref_data, ref_indptr, ref_indices, ref_width, ref_dense);
+    csr2dense(ref_data, ref_indptr, ref_indices, common_genes, ref_dense);
+    ref_width = common_genes.size();
+    for (int i = 0; i < ref_width; ++i)
+        cout<<ref_dense[i]<<" ";
+    cout<<endl;
+    
+    raw_data.ref_width  = ref_width;
+    raw_data.ref_height = ref_height;
 
     cout<<"ref data shape: "<<ref_height <<" x "<<ref_width<<" non-zero number: "<<ref_data.size()<<endl;
     // for (int i = 0; i < 100; i++)
@@ -325,6 +354,41 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
     return true;
 }
 
+bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, set<uint32>& cols, vector<float>& res)
+{
+    
+    int width = cols.size();
+    map<uint32, uint32> index_map;
+    uint32 index = 0;
+    for (auto& c : cols)
+    {
+        // cout<<c<<" ";
+        index_map[c] = index++;
+    }
+    // cout<<endl;
+
+    int height = indptr.size() - 1;
+    res.resize((size_t)(width) * height, 0);
+
+    size_t line = 0;
+    for (int i = 0; i < height; ++i)
+    {
+        auto start = indptr[i];
+        auto end = indptr[i+1];
+        for (uint32 i = start; i < end; ++i)
+        {
+            auto raw_index = indices[i];
+            if (index_map.count(raw_index) != 0)
+            {
+                res[line*width + index_map[raw_index]] = data[i];
+            }
+        }
+        line++;
+    }
+
+    return true;
+}
+
 bool DataParser::loadQryData()
 {
     loadQryMatrix();
@@ -332,7 +396,11 @@ bool DataParser::loadQryData()
     // Logarithmize the data matrix
     std::transform(qry_data.begin(), qry_data.end(), qry_data.begin(), [](float f){ return log2(f+1);});
 
-    csr2dense(qry_data, qry_indptr, qry_indices, qry_width, qry_dense);
+    csr2dense(qry_data, qry_indptr, qry_indices, common_genes, qry_dense);
+    qry_width = common_genes.size();
+    
+    raw_data.qry_height = qry_height;
+    raw_data.qry_width = qry_width;
 
     cout<<"qry data shape: "<<qry_height <<" x "<<qry_width<<" non-zero number: "<<qry_data.size()<<endl;
 
@@ -402,6 +470,8 @@ bool DataParser::preprocess()
     cout << "scale ref cost time(ms): " << timer.toc() << endl;
     vector< float >().swap(ref_dense);
 
+    
+
     timer.tic();
     scale(qry_dense, qry_height, qry_width, raw_data.qry);
     cout << "scale qry cost time(ms): " << timer.toc() << endl;
@@ -409,16 +479,20 @@ bool DataParser::preprocess()
 
     // filter genes of datas
     timer.tic();
-    filter();
-    cout << "filter genes cost time(ms): " << timer.toc() << endl;
-    cout << "new qry size: " << raw_data.qry_height << " x " << raw_data.qry_width
-         << endl;
-    cout << "new ref size: " << raw_data.ref_height << " x " << raw_data.ref_width
-         << endl;
+    // filter();
+    // cout << "filter genes cost time(ms): " << timer.toc() << endl;
+    // cout << "new qry size: " << raw_data.qry_height << " x " << raw_data.qry_width
+    //      << endl;
+    // cout << "new ref size: " << raw_data.ref_height << " x " << raw_data.ref_width
+    //      << endl;
 
     // re-sort ref data groupby celltype
     resort();
     cout << "re-sort ref by celltype cost time(ms): " << timer.toc() << endl;
+
+    for (int i = 0; i < ref_width/10; ++i)
+        cout<<raw_data.ref[i]<<" ";
+    cout<<endl;
 
     raw_data.ctdidx = ref_train_idxs;
     raw_data.ctdiff = ref_train_values;
