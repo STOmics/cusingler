@@ -10,7 +10,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <map>
 #include <algorithm>
 #include <cmath>
 #include <cassert>
@@ -18,35 +17,6 @@ using namespace std;
 
 #include "H5Cpp.h"
 using namespace H5;
-
-bool readLabels(string filename, InputData& data)
-{
-    // open h5 file handle
-    H5File* file = new H5File(filename.c_str(), H5F_ACC_RDONLY);
-
-    auto& labels = data.labels;
-
-    DataSet   dataset   = DataSet(file->openDataSet("/tmp"));
-    auto      datatype  = dataset.getDataType();
-    DataSpace dataspace = dataset.getSpace();
-    int       rank      = dataspace.getSimpleExtentNdims();
-    hsize_t   dims[rank];
-    dataspace.getSimpleExtentDims(dims, NULL);
-
-    size_t test_size = 1;
-    for (int i = 0; i < rank; ++i)
-        test_size *= dims[i];
-    labels.resize(test_size);
-    dataset.read(&labels[0], datatype);
-
-    cout << "labels size: " << labels.size() << " " << dims[0] << " x " << dims[1]
-         << endl;
-
-    // clear resources
-    delete file;
-
-    return true;
-}
 
 template<typename T>
 vector<T> getDataset(Group& group, string name)
@@ -88,8 +58,8 @@ bool DataParser::loadRefMatrix()
         ref_indices = getDataset<int>(group, "indices");
         ref_indptr = getDataset<int>(group, "indptr");
 
-        set<float> m(ref_data.begin(), ref_data.end());
-        cout<<"ref data uniq elements: "<<m.size()<<endl;
+        // set<float> m(ref_data.begin(), ref_data.end());
+        // cout<<"ref data uniq elements: "<<m.size()<<endl;
     }
 
     // Load celltypes of per cell
@@ -110,23 +80,19 @@ bool DataParser::loadRefMatrix()
 bool DataParser::trainData()
 {
     Timer timer("ms");
-    // Groupby celltype of each cell
-    map<uint8, vector<uint32>> group_by;
-    for (uint32 i = 0; i < celltype_codes.size(); ++i)
-    {
-        group_by[celltype_codes[i]].push_back(i);
-    }
-
-    // cout<<"groupby time: "<<timer.toc()<<endl;
 
     // Calculate median gene value for each celltype
     map<uint8, vector<float>> median_map;
-    for (auto& [ct, idxs] : group_by)
+    for (int i = 0; i < ref_ctidx.size(); i+=2)
     {
+        int ct = i / 2;
+        auto pos = ref_ctidx[i];
+        auto len = ref_ctidx[i+1];
+
         vector<float> sub_ref;
-        sub_ref.resize(idxs.size() * ref_width, 0);
+        sub_ref.resize(len * ref_width, 0);
         int line = 0;
-        for (auto& idx : idxs)
+        for (int idx = pos; idx < pos + len; ++idx)
         {
             auto start = ref_indptr[idx];
             auto end = ref_indptr[idx+1];
@@ -142,7 +108,7 @@ bool DataParser::trainData()
         for (uint32 i = 0; i < ref_width; ++i)
         {
             vector<float> cols;
-            for (uint32 j = 0; j < idxs.size(); ++j)
+            for (uint32 j = 0; j < len; ++j)
             {
                 cols.push_back(sub_ref[j*ref_width+i]);
             }
@@ -160,11 +126,12 @@ bool DataParser::trainData()
         median_map.insert({ct, median});
         // cout<<"median time: "<<timer.toc()<<endl;
     }
-    cout<<"median time: "<<timer.toc()<<endl;
+    cout<<"median time(ms): "<<timer.toc()<<endl;
 
     // Calculate difference for each two celltypes
     uint32 idx_start = 0;
-    size_t gene_thre = round(500 * pow((2 / 3.0), log2(uniq_celltypes.size())));
+    size_t common_gene_n = round(500 * pow((2 / 3.0), log2(uniq_celltypes.size())));
+    size_t thre_gene_n = round(500 * pow((2 / 3.0), log2(2)));
 
     // set<uint32> exclude_genes{2034, 2599, 6326, 7525, 7637, 8125, 9321, 10246, 13544, 17496};
     for (auto& [k1, v1] : median_map)
@@ -197,6 +164,8 @@ bool DataParser::trainData()
             {
                 if (diff[i].first <= 0) break;
                 ref_train_values.push_back(diff[i].second);
+                if (i < thre_gene_n)
+                    thre_genes.insert(ref_width-diff[i].second-1);
             }
             // cout<<uniq_celltypes[k1]<<"-"<<uniq_celltypes[k2]<<" "<<i<<endl;
             // cout.precision(8);
@@ -206,7 +175,7 @@ bool DataParser::trainData()
             ref_train_idxs.push_back(i);
             idx_start += i;
             // Collect common genes in top N
-            for (int i = 0; i < gene_thre; ++i)
+            for (int i = 0; i < common_gene_n; ++i)
             {
                 common_genes.insert(ref_width-diff[i].second-1);
                 // common_genes.insert(diff[i].second);
@@ -228,9 +197,10 @@ bool DataParser::trainData()
     //     cout<<g<<endl;
     // exit(0);
     cout<<"common genes size: "<<common_genes.size()<<endl;
+    cout<<"threshold genes size: "<<thre_genes.size()<<endl;
     cout<<"ref_train_idxs size: "<<ref_train_idxs.size()<<endl;
     cout<<"ref_train_values size: "<<ref_train_values.size()<<endl;
-    cout<<"train time: "<<timer.toc()<<endl;
+    cout<<"train time(ms): "<<timer.toc()<<endl;
 
     return true;
 }
@@ -282,16 +252,23 @@ bool DataParser::findIntersectionGenes()
     }
     else
     {
+        if (common_uniq_genes.empty())
+        {
+            cerr<<"No intersection genes in two file, please check input data!"<<endl;
+            exit(-1);
+        }
         filter_genes = true;
+        int new_index = 0;
         for (int i = 0; i < ref_genes.size(); ++i)
         {
             if (common_uniq_genes.count(ref_genes[i]) != 0)
-                ref_gene_index.insert(i);
+                ref_gene_index.insert({i, new_index++});
         }
+        new_index = 0;
         for (int i = 0; i < qry_genes.size(); ++i)
         {
             if (common_uniq_genes.count(qry_genes[i]) != 0)
-                qry_gene_index.insert(i);
+                qry_gene_index.insert({i, new_index++});
         }
         cout<<"Filter genes, qry genes reduce from "<<qry_genes.size()<<" to "<<qry_gene_index.size()
             <<", ref genes reduce from "<<ref_genes.size()<<" to "<<ref_gene_index.size()<<endl;
@@ -308,28 +285,38 @@ bool DataParser::loadRefData()
     // Logarithmize the data matrix
     std::transform(ref_data.begin(), ref_data.end(), ref_data.begin(), [](float f){ return log2(f+1);});
 
-    // map<float, uint32> m;
-    // for (auto& f : ref_data)
-    //     m[f]++;
-    // for (auto& [k,v] : m)
-    //     cout<<"new: "<<k<<" "<<v<<endl;
-    // Train data
-    trainData();
+    // Groupby cell index through celltypes and resort ref csr data
+    groupbyCelltypes();
+    resort();
 
-    // Transform matrix format from csr to dense
-    csr2dense(ref_data, ref_indptr, ref_indices, common_genes, ref_dense);
-    ref_width = common_genes.size();
-    for (int i = 0; i < ref_width; ++i)
-        cout<<ref_dense[i]<<" ";
-    cout<<endl;
-    
-    raw_data.ref_width  = ref_width;
-    raw_data.ref_height = ref_height;
+    // vector<float> data{1,2,3,4,5,6,7};
+    // vector<int> indptr{0,3,4,7};
+    // vector<int> indices{1,2,4,0,2,1,3};
 
-    cout<<"ref data shape: "<<ref_height <<" x "<<ref_width<<" non-zero number: "<<ref_data.size()<<endl;
-    // for (int i = 0; i < 100; i++)
-    //     cout<<ref_dense[i]<<" ";
+    // map<uint32, uint32> gene_index;
+    // gene_index.insert({0,0});
+    // gene_index.insert({1,1});
+    // gene_index.insert({2,2});
+    // gene_index.insert({3,3});
+    // gene_index.insert({4,4});
+
+
+    if (filter_genes)
+    {
+        // removeCols(data, indptr, indices, gene_index);
+        removeCols(ref_data, ref_indptr, ref_indices, ref_gene_index);
+        ref_gene_index.clear();
+    }
+    // for (auto& d : data)
+    //     cout<<d<<" ";
     // cout<<endl;
+    // for (auto& d : indptr)
+    //     cout<<d<<" ";
+    // cout<<endl;
+    // for (auto& d : indices)
+    //     cout<<d<<" ";
+    // cout<<endl;
+    // exit(0);
 
     return true;
 }
@@ -354,7 +341,7 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
     return true;
 }
 
-bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, set<uint32>& cols, vector<float>& res)
+bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, set<uint32>& cols, vector<uint16>& res)
 {
     
     int width = cols.size();
@@ -375,12 +362,29 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
     {
         auto start = indptr[i];
         auto end = indptr[i+1];
+
+        set< float > uniq;
         for (uint32 i = start; i < end; ++i)
         {
             auto raw_index = indices[i];
             if (index_map.count(raw_index) != 0)
             {
-                res[line*width + index_map[raw_index]] = data[i];
+                uniq.insert(data[i]);
+            }
+        }
+        vector< float >                order(uniq.begin(), uniq.end());
+        unordered_map< float, uint16 > index;
+        for (uint16 j = 0; j < order.size(); ++j)
+        {
+            index[order[j]] = j;
+        }
+
+        for (uint32 i = start; i < end; ++i)
+        {
+            auto raw_index = indices[i];
+            if (index_map.count(raw_index) != 0)
+            {
+                res[line*width + index_map[raw_index]] = index[data[i]];
             }
         }
         line++;
@@ -396,14 +400,11 @@ bool DataParser::loadQryData()
     // Logarithmize the data matrix
     std::transform(qry_data.begin(), qry_data.end(), qry_data.begin(), [](float f){ return log2(f+1);});
 
-    csr2dense(qry_data, qry_indptr, qry_indices, common_genes, qry_dense);
-    qry_width = common_genes.size();
-    
-    raw_data.qry_height = qry_height;
-    raw_data.qry_width = qry_width;
-
-    cout<<"qry data shape: "<<qry_height <<" x "<<qry_width<<" non-zero number: "<<qry_data.size()<<endl;
-
+    if (filter_genes)
+    {
+        removeCols(qry_data, qry_indptr, qry_indices, qry_gene_index);
+        qry_gene_index.clear();
+    }
     return true;
 }
 
@@ -461,48 +462,17 @@ bool DataParser::groupbyCelltypes()
 
 bool DataParser::preprocess()
 {
-    Timer timer("ms");
-
-    groupbyCelltypes();
-    cout << "groupby celltypes of ref cost time(ms): " << timer.toc() << endl;
-
-    scale(ref_dense, ref_height, ref_width, raw_data.ref);
-    cout << "scale ref cost time(ms): " << timer.toc() << endl;
-    vector< float >().swap(ref_dense);
-
-    
-
-    timer.tic();
-    scale(qry_dense, qry_height, qry_width, raw_data.qry);
-    cout << "scale qry cost time(ms): " << timer.toc() << endl;
-    vector< float >().swap(qry_dense);
-
-    // filter genes of datas
-    timer.tic();
-    // filter();
-    // cout << "filter genes cost time(ms): " << timer.toc() << endl;
-    // cout << "new qry size: " << raw_data.qry_height << " x " << raw_data.qry_width
-    //      << endl;
-    // cout << "new ref size: " << raw_data.ref_height << " x " << raw_data.ref_width
-    //      << endl;
-
-    // re-sort ref data groupby celltype
-    resort();
-    cout << "re-sort ref by celltype cost time(ms): " << timer.toc() << endl;
-
-    for (int i = 0; i < ref_width/10; ++i)
-        cout<<raw_data.ref[i]<<" ";
-    cout<<endl;
 
     raw_data.ctdidx = ref_train_idxs;
     raw_data.ctdiff = ref_train_values;
 
-    raw_data.ctids = ref_ctids;
     raw_data.ctidx = ref_ctidx;
 
     raw_data.ct_num = uniq_celltypes.size();
 
     raw_data.celltypes = uniq_celltypes;
+
+
 
     return true;
 }
@@ -630,6 +600,7 @@ void DataParser::filter()
     vector< uint32 > _ctdiff;
     vector< uint32 > _ctdidx;
     size_t           start = 0;
+    cout<<"before filter train idx: "<<ref_train_values.size()<<endl;
     for (size_t i = 0; i < ref_train_idxs.size(); i += 2)
     {
         auto s = ref_train_idxs[i];
@@ -655,6 +626,8 @@ void DataParser::filter()
     }
     _ctdiff.swap(ref_train_values);
     _ctdidx.swap(ref_train_idxs);
+    cout<<"before filter train idx: "<<ref_train_values.size()<<endl;
+
 
     
     // filter genes for ref data
@@ -669,44 +642,89 @@ void DataParser::filter()
     raw_data.qry_height = qry_height;
 }
 
+// Resort csr lines of ref, groupby celltypes
 void DataParser::resort()
 {
-    vector< uint16 > dest;
-    dest.resize(raw_data.ref.size(), 0);
-    cout<<dest.size()<<endl;
-    // for (int i = 0; i < label_num; ++i)
-    // {
-    //     cout<<i<<" "<<ref_ctidx[i*2]<<" "<<ref_ctidx[i*2+1]<<endl;
-    // }
-    // cout<<ref_ctids.size()<<endl;
+    vector<int> _indices;
+    vector<int> _indptr{0};
+    vector<float> _data;
 
-    auto width = raw_data.ref_width;
-    auto task = [&](size_t start)
+    for (int i = 0; i < ref_ctidx.size(); i+=2)
     {
-        for (size_t i = start; i < label_num; i += thread_num)
+        auto pos = ref_ctidx[i];
+        auto len = ref_ctidx[i+1];
+        for (int j = pos; j < pos+len; j++)
         {
-            size_t pos = ref_ctidx[i * 2];
-            size_t len = ref_ctidx[i * 2 + 1];
-            size_t idx = pos * width;
-            for (size_t j = pos; j < pos + len; ++j)
-            {
-                for (size_t k = 0; k < width; ++k)
-                    dest[idx++] = raw_data.ref[ref_ctids[j] * width + k];
-            }
+            auto line_num = ref_ctids[j];
+            auto start = ref_indptr[line_num];
+            auto end = ref_indptr[line_num+1];
+            _indptr.push_back(_indptr.back()+end-start);
+            _indices.insert(_indices.end(), ref_indices.begin()+start, ref_indices.begin()+end);
+            _data.insert(_data.end(), ref_data.begin()+start, ref_data.begin()+end);
         }
-    };
-    vector< thread > threads;
-    for (int i = 0; i < thread_num; ++i)
+    }    
+
+    _indices.swap(ref_indices);
+    _indptr.swap(ref_indptr);
+    _data.swap(ref_data);
+
+    ref_ctids.clear();
+}
+
+// Resort csr lines of ref, groupby celltypes
+void DataParser::removeCols(vector<float>& data, vector<int>& indptr, vector<int>& indices, map<uint32, uint32>& colsMap)
+{
+    vector<int> _indices;
+    vector<int> _indptr{0};
+    vector<float> _data;
+    
+    for (int j = 0; j < indptr.size()-1; j++)
     {
-        thread th(task, i);
-        threads.push_back(std::move(th));
-    }
-    for (auto& th : threads)
-    {
-        th.join();
+        auto start = indptr[j];
+        auto end = indptr[j+1];
+        for (int i = start; i < end; ++i)
+        {
+            if (colsMap.count(indices[i]) == 0) continue;
+            _indices.push_back(colsMap[indices[i]]);
+            _data.push_back(data[i]);
+        }
+        _indptr.push_back(_data.size());
     }
 
-    dest.swap(raw_data.ref);
-    for (uint32 i = 0; i < ref_ctids.size(); ++i)
-        ref_ctids[i] = i;
+    _indices.swap(indices);
+    _indptr.swap(indptr);
+    _data.swap(data);
+
+}
+
+// Transform matrix format from csr to dense
+bool DataParser::generateDenseMatrix(int step)
+{
+    set<uint32> gene_set;
+    if (step == 0)
+    {
+        // Use common genes for step score()
+        gene_set = common_genes;
+    }
+    else if (step == 1)
+    {
+        // Use threshold genes for step finetune()
+        gene_set = thre_genes;
+    }
+
+    csr2dense(ref_data, ref_indptr, ref_indices, gene_set, raw_data.ref);
+    ref_width = gene_set.size();
+    raw_data.ref_width  = ref_width;
+    raw_data.ref_height = ref_height;
+
+    cout<<"ref data shape: "<<ref_height <<" x "<<ref_width<<" non-zero number: "<<ref_data.size()<<endl;
+
+    csr2dense(qry_data, qry_indptr, qry_indices, gene_set, raw_data.qry);
+    qry_width = gene_set.size();
+    raw_data.qry_height = qry_height;
+    raw_data.qry_width = qry_width;
+
+    cout<<"qry data shape: "<<qry_height <<" x "<<qry_width<<" non-zero number: "<<qry_data.size()<<endl;
+
+    return true;
 }

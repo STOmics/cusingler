@@ -12,23 +12,37 @@ using namespace std;
 
 int main(int argc, char** argv)
 {
-    if (argc < 4)
+    if (argc < 3)
     {
-        cerr << "enter <input.h5> <ref h5> <qry h5> [mode]" << endl;
+        cerr << "enter <ref h5> <qry h5> [rank mode: 0 => bincount, 1 => count]" << endl;
         exit(-1);
     }
-    string filename(argv[1]);
-    string ref_h5(argv[2]);
-    string qry_h5(argv[3]);
-    int    mod = 0;
-    if (argc == 5)
+
+    string ref_h5(argv[1]);
+    string qry_h5(argv[2]);
+    int    rank_mode = 0;
+    if (argc == 4)
     {
-        mod = stoi(argv[4]);
+        rank_mode = stoi(argv[3]);
     }
-    Pipeline pipeline = Pipeline();
-    pipeline.train(filename, ref_h5, qry_h5);
-    pipeline.score(mod);
-    // pipeline.finetune(mod);
+    if(rank_mode == 0)
+    {
+        cout<<"rank data by bincount"<<endl;
+    }
+    else if (rank_mode == 1)
+    {
+        cout<<"rank data by count"<<endl;
+    }
+    else
+    {
+        cerr<<"invalid rank mode, please enter [0 => bincount, 1 => count]"<<endl;
+        exit(-1);
+    }
+
+    Pipeline pipeline = Pipeline(ref_h5, qry_h5, rank_mode);
+    pipeline.train();
+    pipeline.score();
+    pipeline.finetune();
 
     return 0;
 }

@@ -12,7 +12,7 @@
 
 bool init();
 bool destroy();
-bool copyin(InputData& rawdata, vector<uint32>& ctids, vector<uint32>& ctidx, vector<uint32>& ctdiff, vector<uint32>& ctdidx,
+bool copyin(InputData& rawdata, vector<uint32>& ctidx, vector<uint32>& ctdiff, vector<uint32>& ctdidx,
     vector<uint16>& ref, vector<uint16>& qry);
 std::vector<uint32> cufinetune(int mod);
 bool get_label(InputData& rawdata,int mod);

@@ -26,7 +26,6 @@ vector< float >  h_labels;
 uint32           ref_height, ref_width, qry_height, qry_width;
 uint32           ref_lines_width;
 uint32           ct_num;
-uint32*          d_ctids;
 vector< uint32 > h_ctidx;
 vector< uint32 > h_ctdiff, h_ctdidx;
 size_t           pitchref;
@@ -66,7 +65,6 @@ bool init()
     ref_height = ref_width = qry_height = qry_width = 0;
     ref_lines_width                                 = 0;
     ct_num                                          = 0;
-    d_ctids                                         = NULL;
     pitchref                                        = 0;
     pitchqry                                        = 0;
     pitch_ref_lines                                 = 0;
@@ -78,7 +76,6 @@ bool destroy()
     cudaFree(d_ref);
     cudaFree(d_qry);
     // cudaFree(d_labels);
-    cudaFree(d_ctids);
     // cudaStreamDestroy(stream);
     // cudaFree(d_ctidx);
     // cudaFree(d_ctdiff);
@@ -100,7 +97,6 @@ bool destroy_score()
 {
     cudaFree(d_ref);
     cudaFree(d_qry);
-    cudaFree(d_ctids);
 
     cudaStreamDestroy(stream);
 
@@ -273,10 +269,6 @@ bool copyin_score(InputData& rawdata)
     CHECK(cudaMemcpy(d_qry, rawdata.qry.data(), rawdata.qry.size() * sizeof(uint16),
                     cudaMemcpyHostToDevice));
 
-    cudaMalloc(( void** )&d_ctids, rawdata.ctids.size() * sizeof(uint32));
-    CHECK(cudaMemcpy(d_ctids, rawdata.ctids.data(), rawdata.ctids.size() * sizeof(uint32),
-                     cudaMemcpyHostToDevice));
-
     h_ctidx = rawdata.ctidx;
 
     cudaMalloc(( void** )&d_gene_idx, qry_width * sizeof(uint32));
@@ -293,7 +285,7 @@ bool copyin_score(InputData& rawdata)
     return true;
 }
 
-bool copyin(InputData& rawdata, vector< uint32 >& ctids, vector< uint32 >& ctidx,
+bool copyin(InputData& rawdata, vector< uint32 >& ctidx,
             vector< uint32 >& ctdiff, vector< uint32 >& ctdidx, vector< uint16 >& ref,
             vector< uint16 >& qry)
 {
@@ -302,6 +294,8 @@ bool copyin(InputData& rawdata, vector< uint32 >& ctids, vector< uint32 >& ctidx
     qry_height = rawdata.qry_height;
     qry_width  = rawdata.qry_width;
     ct_num     = rawdata.ct_num;
+    cout<<"ref_height: "<<ref_height<<endl;
+    cout<<"qry_width: "<<qry_width<<endl;
 
     CHECK(cudaStreamCreate(&stream));
     // cout<<"current stream"<<stream<<endl;
@@ -309,7 +303,6 @@ bool copyin(InputData& rawdata, vector< uint32 >& ctids, vector< uint32 >& ctidx
                           ref_height));
     CHECK(cudaMallocPitch(( void** )&d_qry, &pitchqry, qry_width * sizeof(uint16),
                           qry_height));
-    cudaMalloc(( void** )&d_ctids, ctids.size() * sizeof(uint32));
     // cudaMalloc((void**)&d_ctidx, ctidx.size() * sizeof(uint32));
     // cudaMalloc((void**)&d_ctdiff, ctdiff.size() * sizeof(uint32));
     // cudaMalloc((void**)&d_ctdidx, ctdidx.size() * sizeof(uint32));
@@ -327,10 +320,7 @@ bool copyin(InputData& rawdata, vector< uint32 >& ctids, vector< uint32 >& ctidx
     // // cudaMemcpy(d_labels, rawdata.labels.data(), qry_height * ct_num * sizeof(float),
     // cudaMemcpyHostToDevice);
     h_labels = rawdata.labels;
-    // CHECK( cudaMemcpyAsync(d_ctids, ctids.data(), ctids.size() * sizeof(uint32),
     // cudaMemcpyHostToDevice,stream));
-    CHECK(cudaMemcpy(d_ctids, ctids.data(), ctids.size() * sizeof(uint32),
-                     cudaMemcpyHostToDevice));
 
     h_ctidx = ctidx;
 
@@ -344,13 +334,21 @@ bool copyin(InputData& rawdata, vector< uint32 >& ctids, vector< uint32 >& ctidx
     cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16));
     cudaMalloc(( void** )&d_qry_rank, qry_width * sizeof(float));
 
+    cout<<"test"<<endl;
+    thrust::device_ptr<uint32> dev_pt(d_cell_idx);
+    for(int i=0;i<20;i++)
+    {   
+        cout<<dev_pt[i]<<" ";               
+    }
+    cout<<"test"<<endl;
+
     // h_genidx.size() <4096
 
     // ref_lines_width=4096;
     // CHECK(cudaMallocPitch((void**)&d_ref_lines,&pitch_ref_lines,ref_lines_width*sizeof(uint16),ref_height));
 
-    CHECK(cudaMalloc((void**)&d_ref_lines, 2000000000 * sizeof(uint16));)                  //max=  genes            
-    cudaMalloc((void**)&d_ref_rank, 2000000000 * sizeof(float));
+    CHECK(cudaMalloc((void**)&d_ref_lines, 200000000 * sizeof(uint16));)                  //max=  genes            
+    cudaMalloc((void**)&d_ref_rank, 200000000 * sizeof(float));
     cudaMalloc((void**)&d_score,1000000* sizeof(float));
 
     std::cout << "used gpu mem(MB): " << getUsedMem() << std::endl;
@@ -942,8 +940,6 @@ bool get_label(InputData& rawdata,int mod)
         for (int i = 0; i < h_labels.size(); ++i)
             if ((line*ct_num+i) < qry_height * ct_num)
                 rawdata.labels[line*ct_num+i]=h_labels[i];
-
-       
     }
         
     
@@ -953,6 +949,13 @@ bool get_label(InputData& rawdata,int mod)
 
 vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int mod)
 {
+    cout<<"test"<<endl;
+    thrust::device_ptr<uint32> dev_pt(d_cell_idx);
+    for(int i=0;i<20;i++)
+    {   
+        cout<<dev_pt[i]<<" ";               
+    }
+    cout<<"test"<<endl;
 
     set< uint32 > uniq_genes;
     int           gene_thre = round(500 * pow((2 / 3.0), log2(top_labels.size())));
@@ -984,7 +987,17 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
     {
         printf("get_device_qry_line CUDA Error: %s\n", cudaGetErrorString(err));
     }
+
+    cout<<"test1"<<endl;
+    thrust::device_ptr<uint32> dev_pt1(d_cell_idx);
+    for(int i=0;i<20;i++)
+    {   
+        cout<<dev_pt1[i]<<" ";               
+    }
+    cout<<"test"<<endl;
+
     // get rank of qry data
+    cout<<h_gene_idx.size()<<endl;
     rankdata<<< (h_gene_idx.size() - 1) / 1024 + 1, 1024 >>>(d_qry_line, d_qry_rank,
                                                                  h_gene_idx.size());
     err = cudaGetLastError();
@@ -992,6 +1005,14 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
     {
         printf("qry rank CUDA Error: %s\n", cudaGetErrorString(err));
     }
+
+    cout<<"test2"<<endl;
+    thrust::device_ptr<uint32> dev_pt2(d_cell_idx);
+    for(int i=0;i<20;i++)
+    {   
+        cout<<dev_pt2[i]<<" ";               
+    }
+    cout<<"test"<<endl;
 
     vector< pair< size_t, size_t > > temp;
     size_t                           total_len = 0;
@@ -1023,6 +1044,13 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
         // cout<<total_len<<" "<<total_len+len<<" "<<pos<<endl;
         total_len += len;
     }
+    cout<<h_cell_idx.size()<<endl;
+
+    // thrust::device_ptr<uint32> dev_pt(d_cell_idx);
+    // for(int i=0;i<20;i++)
+    // {   
+    //     cout<<dev_pt[i]<<" ";               
+    // }
     CHECK(cudaMemcpy(d_cell_idx, h_cell_idx.data(), h_cell_idx.size()*sizeof(uint32), cudaMemcpyHostToDevice));
     // thrust::device_ptr<uint32> dev_pt(d_cell_idx);
     // cout<<"h_cell_idx.size()"<<h_cell_idx.size()<<endl;
@@ -1162,14 +1190,21 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
 }
 vector< uint32 > cufinetune(int mod)
 {
+    cout<<"test"<<endl;
+    thrust::device_ptr<uint32> dev_pt(d_cell_idx);
+    for(int i=0;i<20;i++)
+    {   
+        cout<<dev_pt[i]<<" ";               
+    }
+    cout<<"test"<<endl;
+
     Timer timer("ms");
     // process each cell
     vector<uint32> res;
-    cout<<"cell num:"<<qry_height<<endl;
-    std::cout<<"used gpu mem(MB): "<<getUsedMem()<<std::endl;
+    
     // for (int i = 0; i < 1; ++i)
     // for (int i = 26; i < 27; ++i)
-    for (int i = 0; i < qry_height; ++i)
+    for (int i = 0; i < 100; ++i)
     {
         uint16* qry_head = ( uint16* )(( char* )d_qry + i * pitchqry);
 
@@ -1178,7 +1213,7 @@ vector< uint32 > cufinetune(int mod)
         uint32 start = i * ct_num;
         for (int pos = 0; pos < ct_num; ++pos)
         {
-            if (h_labels.at(start + pos) != 0)
+            // if (h_labels.at(start + pos) != 0)
                 top_labels.push_back(pos);
         }
 

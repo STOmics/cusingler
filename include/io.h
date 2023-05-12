@@ -8,11 +8,10 @@
 
 #include <string>
 #include <set>
+#include <map>
 using namespace std;
 
 #include "types.h"
-
-bool readLabels(string filename, InputData& data);
 
 class DataParser
 {
@@ -20,16 +19,18 @@ public:
     DataParser(string ref_file, string qry_file, int thread_num=20);
     ~DataParser(){};
 
+    bool trainData();
+
     bool findIntersectionGenes();
     bool loadRefData();
     bool loadQryData();
     bool preprocess();
+    bool generateDenseMatrix(int step);
 
 private:
-    bool trainData();
     bool loadRefMatrix();
     bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, int width, vector<float>& res);
-    bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, set<uint32>& cols, vector<float>& res);
+    bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, set<uint32>& cols, vector<uint16>& res);
 
     bool loadQryMatrix();
 
@@ -43,6 +44,8 @@ private:
                       set< uint32 >& genes);
     void filter();
     void resort();
+    void removeCols(vector<float>& data, vector<int>& indptr, vector<int>& indices, map<uint32, uint32>& cols);
+
 
 public:
     InputData raw_data;
@@ -65,6 +68,7 @@ private:
     vector<uint32> ref_train_idxs;
     vector<uint32> ref_train_values;
     set<uint32> common_genes;
+    set<uint32> thre_genes;
 
     // Dense matrix
     vector<float> ref_dense;
@@ -79,10 +83,10 @@ private:
 
     // Filter genes in case there are differenet genes in ref and qry data
     bool filter_genes;
-    set<uint32> ref_gene_index;
-    set<uint32> qry_gene_index;
+    map<uint32, uint32> ref_gene_index;
+    map<uint32, uint32> qry_gene_index;
 
     // Preprocess result
-    vector< uint32 > ref_ctids;  // cell index of each cell type in ref data
-    vector< uint32 > ref_ctidx;
+    vector< uint32 > ref_ctidx;  // start index and len of each celltypes for ref cells
+    vector< uint32 > ref_ctids;
 };

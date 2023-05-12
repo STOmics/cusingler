@@ -7,6 +7,7 @@
 #pragma once
 
 #include "types.h"
+#include "io.h"
 
 #include <set>
 #include <string>
@@ -16,16 +17,19 @@ using namespace std;
 class Pipeline
 {
 public:
-    Pipeline();
+    Pipeline(string ref_file, string qry_file, int rank_mode);
     ~Pipeline(){};
 
-    bool train(string filename, string ref_file, string qry_file);
-    bool score(int mod);
-    bool finetune(int mod);
-    
-
+    bool train();
+    bool score();
+    bool finetune();
     
 private:
-    InputData        raw_data;
+    // Input parameters
+    string ref_file;
+    string qry_file;
+    int rank_mode;
 
+    // Manage input data
+    DataParser *data_parser;
 };
