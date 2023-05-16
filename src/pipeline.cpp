@@ -45,20 +45,20 @@ bool Pipeline::score()
     //     cout<<raw_data.labels[i]<<" ";
     // cout<<endl;
 
-    // init();
-    // copyin_score(raw_data);
+    init();
+    copyin_score(raw_data);
     
     //get score
     Timer timer("ms");
 
-    // get_label(raw_data, rank_mode);
+    get_label(raw_data, rank_mode);
 
     cout << "score cost time(ms): " << timer.toc() << endl;
     // for (int i = 0; i < 34; ++i)
     //     cout<<raw_data.labels[i]<<" ";
     // cout<<endl;
     
-    // destroy_score();
+    destroy_score();
 
     return true;
 }
@@ -68,9 +68,11 @@ bool Pipeline::finetune()
 {
     cout << "start finetune." << endl;
 
-    data_parser->generateDenseMatrix(1);
+    data_parser->generateDenseMatrix(1);    
 
     auto& raw_data = data_parser->raw_data;
+    // raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 1);    
+
 
     init();  //init and copy  in scoredata
 
@@ -80,8 +82,8 @@ bool Pipeline::finetune()
     auto  res = cufinetune(rank_mode);
     cout << "finetune cost time(ms): " << timer.toc() << endl;
 
-    for (auto& c : res)
-        cout<<raw_data.celltypes[c]<<endl;
+    // for (auto& c : res)
+    //     cout<<raw_data.celltypes[c]<<endl;
 
     destroy();
 

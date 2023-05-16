@@ -163,7 +163,7 @@ bool DataParser::trainData()
             for (; i < diff.size(); ++i)
             {
                 if (diff[i].first <= 0) break;
-                ref_train_values.push_back(diff[i].second);
+                ref_train_values.push_back(ref_width-diff[i].second-1);
                 if (i < thre_gene_n)
                     thre_genes.insert(ref_width-diff[i].second-1);
             }
@@ -710,12 +710,50 @@ bool DataParser::generateDenseMatrix(int step)
     {
         // Use threshold genes for step finetune()
         gene_set = thre_genes;
+
+        map<uint32, uint32> index_map;
+        uint32 index = 0;
+        for (auto& c : gene_set)
+        {
+            // cout<<c<<" ";
+            index_map[c] = index++;
+        }
+
+        raw_data.ctdidx.clear();
+        raw_data.ctdiff.clear();
+        size_t start = 0;
+        for (int i = 0; i < ref_train_idxs.size(); i+=2)
+        {
+            auto pos = ref_train_idxs[i];
+            auto len = ref_train_idxs[i+1];
+            if (pos == 0 && len == 0)
+            {
+                raw_data.ctdidx.push_back(0);
+                raw_data.ctdidx.push_back(0);
+                continue;
+            }
+            for (int j = pos; j < pos+len; ++j)
+            {
+                if (gene_set.count(ref_train_values[j]) == 0)
+                    continue;
+                // cout<<"ctdiff "<<j<<" "<<ref_train_values[j]<<" "<<index_map[ref_train_values[j]]<<endl;
+                raw_data.ctdiff.push_back(index_map[ref_train_values[j]]);
+            }
+            // cout<<"ctdidx "<<start<<" "<<raw_data.ctdiff.size()-start<<endl;
+            raw_data.ctdidx.push_back(start);
+            raw_data.ctdidx.push_back(raw_data.ctdiff.size()-start);
+            start = raw_data.ctdiff.size();
+        }
+        cout<<"ctdiff size: "<<raw_data.ctdiff.size()<<endl;
     }
+    
 
     csr2dense(ref_data, ref_indptr, ref_indices, gene_set, raw_data.ref);
     ref_width = gene_set.size();
     raw_data.ref_width  = ref_width;
     raw_data.ref_height = ref_height;
+
+    
 
     cout<<"ref data shape: "<<ref_height <<" x "<<ref_width<<" non-zero number: "<<ref_data.size()<<endl;
 

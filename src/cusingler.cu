@@ -75,12 +75,6 @@ bool destroy()
 {
     cudaFree(d_ref);
     cudaFree(d_qry);
-    // cudaFree(d_labels);
-    // cudaStreamDestroy(stream);
-    // cudaFree(d_ctidx);
-    // cudaFree(d_ctdiff);
-    // cudaFree(d_ctdidx);
-    // free(h_qry_idx_sample);
 
     cudaFree(d_gene_idx);
     cudaFree(d_cell_idx);
@@ -90,6 +84,8 @@ bool destroy()
     cudaFree(d_ref_rank);
     cudaFree(d_score);
 
+    cudaStreamDestroy(stream);
+
     return true;
 }
 
@@ -97,8 +93,6 @@ bool destroy_score()
 {
     cudaFree(d_ref);
     cudaFree(d_qry);
-
-    cudaStreamDestroy(stream);
 
     cudaFree(d_gene_idx);
     cudaFree(d_cell_idx);
@@ -294,19 +288,14 @@ bool copyin(InputData& rawdata, vector< uint32 >& ctidx,
     qry_height = rawdata.qry_height;
     qry_width  = rawdata.qry_width;
     ct_num     = rawdata.ct_num;
-    cout<<"ref_height: "<<ref_height<<endl;
-    cout<<"qry_width: "<<qry_width<<endl;
+    
 
     CHECK(cudaStreamCreate(&stream));
-    // cout<<"current stream"<<stream<<endl;
     CHECK(cudaMallocPitch(( void** )&d_ref, &pitchref, ref_width * sizeof(uint16),
                           ref_height));
     CHECK(cudaMallocPitch(( void** )&d_qry, &pitchqry, qry_width * sizeof(uint16),
                           qry_height));
-    // cudaMalloc((void**)&d_ctidx, ctidx.size() * sizeof(uint32));
-    // cudaMalloc((void**)&d_ctdiff, ctdiff.size() * sizeof(uint32));
-    // cudaMalloc((void**)&d_ctdidx, ctdidx.size() * sizeof(uint32));
-
+  
     cudaMemcpy2DAsync(d_ref, pitchref, ref.data(), ref_width * sizeof(uint16),
                       ref_width * sizeof(uint16), ref_height, cudaMemcpyHostToDevice,
                       stream);
@@ -314,18 +303,14 @@ bool copyin(InputData& rawdata, vector< uint32 >& ctidx,
                       qry_width * sizeof(uint16), qry_height, cudaMemcpyHostToDevice,
                       stream);
 
-    // cudaMemcpyAsync(d_ref, rawdata.ref.data(), ref_height * ref_width * sizeof(float),
-    // cudaMemcpyHostToDevice,stream); cudaMemcpyAsync(d_qry, rawdata.test.data(),
-    // qry_height * qry_width * sizeof(float), cudaMemcpyHostToDevice,stream);
-    // // cudaMemcpy(d_labels, rawdata.labels.data(), qry_height * ct_num * sizeof(float),
-    // cudaMemcpyHostToDevice);
+   
     h_labels = rawdata.labels;
-    // cudaMemcpyHostToDevice,stream));
 
     h_ctidx = ctidx;
 
     h_ctdiff = ctdiff;
     h_ctdidx = ctdidx;
+
     cudaStreamSynchronize(stream);
     // std::this_thread::sleep_for(std::chrono::seconds(5));
 
@@ -334,20 +319,9 @@ bool copyin(InputData& rawdata, vector< uint32 >& ctidx,
     cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16));
     cudaMalloc(( void** )&d_qry_rank, qry_width * sizeof(float));
 
-    cout<<"test"<<endl;
-    thrust::device_ptr<uint32> dev_pt(d_cell_idx);
-    for(int i=0;i<20;i++)
-    {   
-        cout<<dev_pt[i]<<" ";               
-    }
-    cout<<"test"<<endl;
 
-    // h_genidx.size() <4096
-
-    // ref_lines_width=4096;
-    // CHECK(cudaMallocPitch((void**)&d_ref_lines,&pitch_ref_lines,ref_lines_width*sizeof(uint16),ref_height));
-
-    CHECK(cudaMalloc((void**)&d_ref_lines, 200000000 * sizeof(uint16));)                  //max=  genes            
+   
+    cudaMalloc((void**)&d_ref_lines, 200000000 * sizeof(uint16));
     cudaMalloc((void**)&d_ref_rank, 200000000 * sizeof(float));
     cudaMalloc((void**)&d_score,1000000* sizeof(float));
 
@@ -362,9 +336,8 @@ __global__ void get_device_qry_line(uint32* gene_idx, uint16* qry, const uint32 
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < len)
     {
-        res[tid] =
-            qry[gene_len - gene_idx[tid] - 1];  // gene_len-1=idx_max    g_idx  int->float
-                                                // res dqry-line descending order
+        // printf("tid %d %d\n", tid, gene_idx[tid]);
+        res[tid] = qry[gene_idx[tid]];
     }
 }
 
@@ -397,7 +370,7 @@ __global__ void get_device_ref_lines(const uint32* gene_idx, const uint32 gene_l
     if (ny < gene_len)
     {
         uint16* row_head        = ( uint16* )(( char* )ref + cell_idx[nx] * ref_pitch);
-        res[nx * gene_len + ny] = row_head[ref_width - gene_idx[ny] - 1];
+        res[nx * gene_len + ny] = row_head[gene_idx[ny]];
     }
 }
 __global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
@@ -947,15 +920,9 @@ bool get_label(InputData& rawdata,int mod)
 
 }
 
-vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int mod)
+vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels, const int mod)
 {
-    cout<<"test"<<endl;
-    thrust::device_ptr<uint32> dev_pt(d_cell_idx);
-    for(int i=0;i<20;i++)
-    {   
-        cout<<dev_pt[i]<<" ";               
-    }
-    cout<<"test"<<endl;
+    // cout<<"labels size: "<<top_labels.size()<<endl;
 
     set< uint32 > uniq_genes;
     int           gene_thre = round(500 * pow((2 / 3.0), log2(top_labels.size())));
@@ -980,7 +947,9 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
     // transfer qry data from cpu to gpu
     CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size() * sizeof(uint32),
                      cudaMemcpyHostToDevice));
-    get_device_qry_line<<< h_gene_idx.size() / 1024 + 1, 1024 >>>(
+    
+
+    get_device_qry_line<<< (h_gene_idx.size()-1) / 1024 + 1, 1024 >>>(
         d_gene_idx, qry, h_gene_idx.size(), qry_width, d_qry_line);
     err = cudaGetLastError();
     if (err != cudaSuccess)
@@ -988,16 +957,21 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
         printf("get_device_qry_line CUDA Error: %s\n", cudaGetErrorString(err));
     }
 
-    cout<<"test1"<<endl;
-    thrust::device_ptr<uint32> dev_pt1(d_cell_idx);
-    for(int i=0;i<20;i++)
-    {   
-        cout<<dev_pt1[i]<<" ";               
-    }
-    cout<<"test"<<endl;
+    // vector<uint16> tmp;
+    // tmp.resize(h_gene_idx.size(), 0);
+    // CHECK(cudaMemcpy(tmp.data(), d_qry_line, tmp.size() * sizeof(uint16),
+    //                  cudaMemcpyDeviceToHost));
+    // for (int i = 0; i < tmp.size(); ++i)
+    //     cout<<i<<" "<<tmp[i]<<endl;
+
+    // tmp.resize(h_gene_idx.size(), 0);
+    // CHECK(cudaMemcpy(tmp.data(), d_qry_line, tmp.size() * sizeof(uint16),
+    //                  cudaMemcpyDeviceToHost));
+    // for (int i = 0; i < tmp.size(); ++i)
+    //     cout<<i<<" "<<tmp[i]<<endl;
 
     // get rank of qry data
-    cout<<h_gene_idx.size()<<endl;
+    // cout<<h_gene_idx.size()<<endl;
     rankdata<<< (h_gene_idx.size() - 1) / 1024 + 1, 1024 >>>(d_qry_line, d_qry_rank,
                                                                  h_gene_idx.size());
     err = cudaGetLastError();
@@ -1006,13 +980,19 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
         printf("qry rank CUDA Error: %s\n", cudaGetErrorString(err));
     }
 
-    cout<<"test2"<<endl;
-    thrust::device_ptr<uint32> dev_pt2(d_cell_idx);
-    for(int i=0;i<20;i++)
-    {   
-        cout<<dev_pt2[i]<<" ";               
-    }
-    cout<<"test"<<endl;
+    // cout<<"test2"<<endl;
+    // thrust::device_ptr<float> dev_pt2(d_qry_rank);
+    // set<float> dev_m;
+    // for(int i=0;i<h_gene_idx.size();i++)
+    // {   
+    //     dev_m.insert(dev_pt2[i]);
+    // }
+    // if (dev_m.size() == 1)
+    // {
+    //     cout<<"only one in qry rank"<<endl;
+    // }
+
+    // cout<<"test"<<endl;
 
     vector< pair< size_t, size_t > > temp;
     size_t                           total_len = 0;
@@ -1044,7 +1024,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
         // cout<<total_len<<" "<<total_len+len<<" "<<pos<<endl;
         total_len += len;
     }
-    cout<<h_cell_idx.size()<<endl;
+    // cout<<h_cell_idx.size()<<endl;
 
     // thrust::device_ptr<uint32> dev_pt(d_cell_idx);
     // for(int i=0;i<20;i++)
@@ -1105,6 +1085,13 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
         {
             printf("rankdata_bin3 CUDA Error: %s\n", cudaGetErrorString(err));
         }
+
+        // thrust::device_ptr<float> dev_pt2(d_ref_rank);
+        // for(int i=0;i<h_gene_idx.size();i++)
+        // {   
+        //     cout<<dev_pt2[i]<<" ";               
+        // }
+        // cout<<endl;
     }
     else if (mod == 1)
     {
@@ -1140,7 +1127,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
     // bin
 
     // spearman
-
+    // cout<<total_len<<" "<<h_gene_idx.size()<<endl;
     spearman_reduce<<< total_len, 128 >>>(d_qry_rank, d_ref_rank, h_gene_idx.size(), total_len, d_score);
     // thrust::device_ptr<float> dev_ptr2(d_score);
     // for(int i=0;i<h_gene_idx.size();i++)
@@ -1175,6 +1162,11 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
 
     auto             ele  = std::minmax_element(scores.begin(), scores.end());
     float            thre = *ele.second - 0.05;
+    if (std::isnan(*ele.second))
+    {
+        cout<<"nan"<<endl;
+        exit(-1);
+    }
     vector< uint32 > res;
     for (uint32 i = 0; i < scores.size(); ++i)
     {
@@ -1190,13 +1182,13 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,const int m
 }
 vector< uint32 > cufinetune(int mod)
 {
-    cout<<"test"<<endl;
-    thrust::device_ptr<uint32> dev_pt(d_cell_idx);
-    for(int i=0;i<20;i++)
-    {   
-        cout<<dev_pt[i]<<" ";               
-    }
-    cout<<"test"<<endl;
+    // cout<<"test"<<endl;
+    // thrust::device_ptr<uint32> dev_pt(d_cell_idx);
+    // for(int i=0;i<20;i++)
+    // {   
+    //     cout<<dev_pt[i]<<" ";               
+    // }
+    // cout<<"test"<<endl;
 
     Timer timer("ms");
     // process each cell
@@ -1213,7 +1205,7 @@ vector< uint32 > cufinetune(int mod)
         uint32 start = i * ct_num;
         for (int pos = 0; pos < ct_num; ++pos)
         {
-            // if (h_labels.at(start + pos) != 0)
+            if (h_labels.at(start + pos) != 0)
                 top_labels.push_back(pos);
         }
 
@@ -1226,6 +1218,7 @@ vector< uint32 > cufinetune(int mod)
             // for (auto& label : top_labels)
             //     cout<<label<<endl;
         }
+        // cout<<top_labels.front()<<endl;
 
         res.push_back(top_labels.front());
         if (i % 100 == 0)
