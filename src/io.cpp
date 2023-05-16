@@ -376,7 +376,8 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
         unordered_map< float, uint16 > index;
         for (uint16 j = 0; j < order.size(); ++j)
         {
-            index[order[j]] = j;
+            // There is not exists 0 in csr format, so start from 1
+            index[order[j]] = j+1;
         }
 
         for (uint32 i = start; i < end; ++i)
