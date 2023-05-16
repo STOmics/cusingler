@@ -1196,7 +1196,7 @@ vector< uint32 > cufinetune(int mod)
     
     // for (int i = 0; i < 1; ++i)
     // for (int i = 26; i < 27; ++i)
-    for (int i = 0; i < 100; ++i)
+    for (int i = 0; i < qry_height; ++i)
     {
         uint16* qry_head = ( uint16* )(( char* )d_qry + i * pitchqry);
 
