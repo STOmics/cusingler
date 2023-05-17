@@ -13,6 +13,7 @@
 #include <iostream>
 #include <set>
 #include <thread>
+#include <fstream>
 using namespace std;
 
 Pipeline::Pipeline(string ref_file, string qry_file, int rank_mode) :
@@ -40,7 +41,9 @@ bool Pipeline::score()
 
     data_parser->generateDenseMatrix(0);
     auto& raw_data = data_parser->raw_data;
-    raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 0);    
+    raw_data.labels.clear();
+    raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 0);
+
     // for (int i = 0; i < 34; ++i)
     //     cout<<raw_data.labels[i]<<" ";
     // cout<<endl;
@@ -54,10 +57,15 @@ bool Pipeline::score()
     get_label(raw_data, rank_mode);
 
     cout << "score cost time(ms): " << timer.toc() << endl;
-    // for (int i = 0; i < 34; ++i)
-    //     cout<<raw_data.labels[i]<<" ";
-    // cout<<endl;
-    
+    // for (int j = 0; j < raw_data.qry_height; ++j)
+    // {
+    //     cout<<"label "<<j<<" ";
+    //     for (int i = 0; i < raw_data.ct_num; ++i)
+    //         cout<<raw_data.labels[j*raw_data.ct_num + i]<<" ";
+    //     cout<<endl;
+    // }
+    // exit(-1);
+
     destroy_score();
 
     return true;
@@ -70,9 +78,31 @@ bool Pipeline::finetune()
 
     data_parser->generateDenseMatrix(1);    
 
-    auto& raw_data = data_parser->raw_data;
-    // raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 1);    
+    // exit(-1);
 
+    auto& raw_data = data_parser->raw_data;
+    // raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 0);
+    // ifstream ifs("/data/users/fxzhao/repo/cusingler/build/new");
+    // // ifstream ifs("/data/users/fxzhao/repo/cusingler/build/label");
+    // string v;
+    // raw_data.labels.clear();
+    // while (ifs >> v)
+    // {
+    //     if (v == "label") 
+    //     {
+    //         ifs >> v;
+    //         continue;
+    //     }
+    //     raw_data.labels.push_back(stoi(v));
+    // }
+    // for (int j = 0; j < raw_data.qry_height; ++j)
+    // {
+    //     cout<<"label "<<j<<" ";
+    //     for (int i = 0; i < raw_data.ct_num; ++i)
+    //         cout<<raw_data.labels[j*raw_data.ct_num + i]<<" ";
+    //     cout<<endl;
+    // }
+    // exit(-1);
 
     init();  //init and copy  in scoredata
 
@@ -82,8 +112,8 @@ bool Pipeline::finetune()
     auto  res = cufinetune(rank_mode);
     cout << "finetune cost time(ms): " << timer.toc() << endl;
 
-    // for (auto& c : res)
-    //     cout<<raw_data.celltypes[c]<<endl;
+    for (auto& c : res)
+        cout<<raw_data.celltypes[c]<<endl;
 
     destroy();
 

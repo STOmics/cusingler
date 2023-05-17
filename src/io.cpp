@@ -8,6 +8,7 @@
 #include "timer.h"
 
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -202,6 +203,10 @@ bool DataParser::trainData()
     cout<<"ref_train_values size: "<<ref_train_values.size()<<endl;
     cout<<"train time(ms): "<<timer.toc()<<endl;
 
+    // for (auto& g : thre_genes)
+    //     cout<<"genes "<<g<<endl;
+    // exit(-1);
+
     return true;
 }
 
@@ -355,8 +360,9 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
     // cout<<endl;
 
     int height = indptr.size() - 1;
+    res.clear();
     res.resize((size_t)(width) * height, 0);
-
+    
     size_t line = 0;
     for (int i = 0; i < height; ++i)
     {
@@ -458,6 +464,9 @@ bool DataParser::groupbyCelltypes()
         start += vec.size();
         ref_ctids.insert(ref_ctids.end(), vec.begin(), vec.end());
     }
+    // for (auto& c : ref_ctids)
+    //     cout<<"cell index "<<c<<endl;
+    // exit(-1);
     return true;
 }
 
@@ -713,10 +722,12 @@ bool DataParser::generateDenseMatrix(int step)
         gene_set = thre_genes;
 
         map<uint32, uint32> index_map;
+        // uint32 index = gene_set.size()-1;
         uint32 index = 0;
         for (auto& c : gene_set)
         {
             // cout<<c<<" ";
+            // index_map[c] = index--;
             index_map[c] = index++;
         }
 
@@ -731,13 +742,15 @@ bool DataParser::generateDenseMatrix(int step)
             {
                 raw_data.ctdidx.push_back(0);
                 raw_data.ctdidx.push_back(0);
+                // cout<<"ctdidx "<<0<<" "<<0<<endl;
+                
                 continue;
             }
             for (int j = pos; j < pos+len; ++j)
             {
                 if (gene_set.count(ref_train_values[j]) == 0)
                     continue;
-                // cout<<"ctdiff "<<j<<" "<<ref_train_values[j]<<" "<<index_map[ref_train_values[j]]<<endl;
+                // cout<<"ctdiff "<<index_map[ref_train_values[j]]<<endl;
                 raw_data.ctdiff.push_back(index_map[ref_train_values[j]]);
             }
             // cout<<"ctdidx "<<start<<" "<<raw_data.ctdiff.size()-start<<endl;
@@ -745,15 +758,38 @@ bool DataParser::generateDenseMatrix(int step)
             raw_data.ctdidx.push_back(raw_data.ctdiff.size()-start);
             start = raw_data.ctdiff.size();
         }
-        cout<<"ctdiff size: "<<raw_data.ctdiff.size()<<endl;
+        // cout<<"ctdiff size: "<<raw_data.ctdiff.size()<<endl;
+        // exit(-1);
+
+        // raw_data.ctdiff.clear();
+        // ifstream ifs("/data/users/fxzhao/repo/cusingler/build/ctdiff");
+        // string line;
+        // int cnt = 0;
+        // while (ifs >> line)
+        // {
+        //     if (cnt++ % 2 != 0)
+        //         raw_data.ctdiff.push_back(gene_set.size()-1-stoi(line));
+        // }
+        // for (auto& v : raw_data.ctdiff)
+        //     cout<<"ctdiff "<<v<<endl;
+        // exit(-1);
+
     }
-    
+
 
     csr2dense(ref_data, ref_indptr, ref_indices, gene_set, raw_data.ref);
     ref_width = gene_set.size();
     raw_data.ref_width  = ref_width;
     raw_data.ref_height = ref_height;
 
+    // cout<<"ref head ";
+    // for (int i = 0; i < 100; ++i)
+    //     cout<<raw_data.ref[i]<<" ";
+    // cout<<endl;
+    // cout<<"ref tail ";
+    // for (int i = 100; i > 0; --i)
+    //     cout<<raw_data.ref[raw_data.ref.size()-i]<<" ";
+    // cout<<endl;
     
 
     cout<<"ref data shape: "<<ref_height <<" x "<<ref_width<<" non-zero number: "<<ref_data.size()<<endl;
@@ -762,6 +798,16 @@ bool DataParser::generateDenseMatrix(int step)
     qry_width = gene_set.size();
     raw_data.qry_height = qry_height;
     raw_data.qry_width = qry_width;
+
+    // cout<<"qry head ";
+    // for (int i = 0; i < 100; ++i)
+    //     cout<<raw_data.qry[i]<<" ";
+    // cout<<endl;
+    // cout<<"qry tail ";
+    // for (int i = 100; i > 0; --i)
+    //     cout<<raw_data.qry[raw_data.qry.size()-i]<<" ";
+    // cout<<endl;
+    // exit(-1);
 
     cout<<"qry data shape: "<<qry_height <<" x "<<qry_width<<" non-zero number: "<<qry_data.size()<<endl;
 
