@@ -134,6 +134,7 @@ bool DataParser::trainData()
     size_t common_gene_n = round(500 * pow((2 / 3.0), log2(uniq_celltypes.size())));
     size_t thre_gene_n = round(500 * pow((2 / 3.0), log2(2)));
 
+    vector<int> my_scores;
     // set<uint32> exclude_genes{2034, 2599, 6326, 7525, 7637, 8125, 9321, 10246, 13544, 17496};
     for (auto& [k1, v1] : median_map)
     {
@@ -150,14 +151,28 @@ bool DataParser::trainData()
                 continue;
             }
             // Get diff of two array
-            vector<pair<float, uint32>> diff;
+            vector<pair<int, uint32>> diff;
             for (int i = 0; i < ref_width; ++i)
             {
-                diff.push_back({v1[i] - v2[i], ref_width-i-1});
+                // cout.precision(10);
+                // diff.push_back({round((v1[i] - v2[i])*1e6), ref_width-i-1});
+                diff.push_back({int(round((v1[i] - v2[i])*1e6)), ref_width-i-1});
+                // diff.push_back({int(floor(v1[i]*1e5) - floor(v2[i]*1e5)), ref_width-i-1});
+                
+                // if ((ref_width-i-1) == 10477)
+                // {
+                //     cout<<i<<" "<<v1[i]<<" "<<v2[i]<<" "<<floor((v1[i] - v2[i])*1e6)<<endl;
+                //     exit(-1);
+                // }
+                // if ((ref_width-i-1) == 4522)
+                // {
+                //     cout<<i<<" "<<v1[i]<<" "<<v2[i]<<" "<<floor((v1[i] - v2[i])*1e6)<<endl;
+                //     exit(-1);
+                // }
             }
             
             // Sort by ascending order
-            std::sort(diff.begin(),diff.end(),std::greater<pair<float,uint32>>());
+            std::sort(diff.begin(),diff.end(),std::greater<pair<int,uint32>>());
                 
             // Only need the score > 0
             int i = 0;
@@ -165,6 +180,8 @@ bool DataParser::trainData()
             {
                 if (diff[i].first <= 0) break;
                 ref_train_values.push_back(ref_width-diff[i].second-1);
+                // ref_train_values.push_back(diff[i].second);
+                my_scores.push_back(diff[i].first);
                 if (i < thre_gene_n)
                     thre_genes.insert(ref_width-diff[i].second-1);
             }
@@ -194,6 +211,29 @@ bool DataParser::trainData()
 
         }
     }
+
+    // vector<double> genes, scores;
+    // ifstream ifs("/data/users/fxzhao/test/00.singler/ctdiff");
+    // double d1, d2;
+    // while (ifs >> d1 >> d2)
+    // {
+    //     scores.push_back(d1);
+    //     genes.push_back(d2);
+    // }
+    // int cnt = 0;
+    // cout.precision(10);
+    // for (int i = 0; i < genes.size(); ++i)
+    // // cout<<ref_train_values.size()<<" "<<my_scores.size()<<endl;
+    // // for (int i = 0; i < 300; ++i)
+    // {
+    //     // cout<<scores[i]<<" "<<my_scores[i];
+    //     if (genes[i] != ref_train_values[i])
+    //         // cout<<" diff gene: "<<i<<" "<<genes[i]<<" "<<ref_train_values[i]
+    //         //     <<" "<<scores[i]<<" "<<my_scores[i]
+    //         //     <<endl;
+    //         cnt++;
+    // }
+    // cout<<genes.size()<<" "<<cnt<<" "<<cnt*100.0/genes.size()<<"%"<<endl;
     // for (auto& g : common_genes)
     //     cout<<g<<endl;
     // exit(0);
@@ -288,7 +328,9 @@ bool DataParser::loadRefData()
     loadRefMatrix();
 
     // Logarithmize the data matrix
-    std::transform(ref_data.begin(), ref_data.end(), ref_data.begin(), [](float f){ return log2(f+1);});
+    // ref_data_d.resize(ref_data.size(), 0);
+    // std::transform(ref_data.begin(), ref_data.end(), ref_data.begin(), [](float f){ return log2(f+1);});
+    // std::transform(ref_data.begin(), ref_data.end(), ref_data.begin(), [](float f){ return f;});
 
     // Groupby cell index through celltypes and resort ref csr data
     groupbyCelltypes();
@@ -405,7 +447,7 @@ bool DataParser::loadQryData()
     loadQryMatrix();
 
     // Logarithmize the data matrix
-    std::transform(qry_data.begin(), qry_data.end(), qry_data.begin(), [](float f){ return log2(f+1);});
+    // std::transform(qry_data.begin(), qry_data.end(), qry_data.begin(), [](float f){ return log2(f+1);});
 
     if (filter_genes)
     {
@@ -761,18 +803,27 @@ bool DataParser::generateDenseMatrix(int step)
         // cout<<"ctdiff size: "<<raw_data.ctdiff.size()<<endl;
         // exit(-1);
 
-        // raw_data.ctdiff.clear();
+        // vector<uint32> diff;
+        // diff.clear();
         // ifstream ifs("/data/users/fxzhao/repo/cusingler/build/ctdiff");
         // string line;
         // int cnt = 0;
         // while (ifs >> line)
         // {
         //     if (cnt++ % 2 != 0)
-        //         raw_data.ctdiff.push_back(gene_set.size()-1-stoi(line));
+        //         diff.push_back(gene_set.size()-1-stoi(line));
         // }
-        // for (auto& v : raw_data.ctdiff)
-        //     cout<<"ctdiff "<<v<<endl;
+        // // for (auto& v : raw_data.ctdiff)
+        // //     cout<<"ctdiff "<<v<<endl;
+        // cnt = 0;
+        // for (int i = 0; i < diff.size(); ++i)
+        // {
+        //     if (diff[i] != raw_data.ctdiff[i])
+        //         cnt++;
+        // }
+        // cout<<diff.size()<<" "<<cnt<<endl;
         // exit(-1);
+        // raw_data.ctdiff = diff;
 
     }
 
