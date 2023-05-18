@@ -482,6 +482,12 @@ bool DataParser::loadQryMatrix()
         cout<<"qry data uniq elements: "<<m.size()<<endl;
     }
 
+    // Load per cell names
+    {
+        auto group(file->openGroup("/obs"));
+        qry_cellnames = getDataset<char*>(group, "_index");
+    }
+
     // clear resources
     delete file;
 
@@ -524,7 +530,7 @@ bool DataParser::preprocess()
 
     raw_data.celltypes = uniq_celltypes;
 
-
+    raw_data.qry_cellnames = qry_cellnames;
 
     return true;
 }

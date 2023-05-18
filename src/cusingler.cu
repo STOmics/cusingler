@@ -786,7 +786,7 @@ float percentile(vector< float > arr, int len, float p)
     return res;
 }
 
-bool get_label(InputData& rawdata,int mod)
+vector<int> get_label(InputData& rawdata,int mod)
 {
     if(mod==0)
     {
@@ -844,7 +844,8 @@ bool get_label(InputData& rawdata,int mod)
     cout<<"ref rank end "<<endl;
     //get all qry rank and calculate score
     
-    auto task = [](vector<float>& score, int thread_id, int width, vector<uint32>& idx, int ct_num, vector<int>& res)
+    vector<int> first_labels(rawdata.labels.size()/rawdata.ct_num, 0);
+    auto task = [&](vector<float>& score, int thread_id, int width, vector<uint32>& idx, int ct_num, vector<int>& res)
     {
         int height = score.size() / width;
         for (int i = 0; i < 64; ++i)
@@ -866,6 +867,7 @@ bool get_label(InputData& rawdata,int mod)
                 start += len;
             }
             auto ele = std::minmax_element(scores.begin(), scores.end());
+            first_labels[line] = (ele.second - scores.begin());
             float thre = *ele.second - 0.05;//max-0.05
             for (int i = 0; i < scores.size(); ++i)
             {
@@ -916,7 +918,7 @@ bool get_label(InputData& rawdata,int mod)
     }
         
     
-  return true;
+  return first_labels;
 
 }
 

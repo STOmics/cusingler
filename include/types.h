@@ -23,6 +23,7 @@ struct InputData
 
     vector<uint16> qry;  // expression matrix as query data, cell x gene
     uint32         qry_height, qry_width;
+    vector<char*>  qry_cellnames;
 
     vector<float> labels;     // initial annotated cell types, cell x celltype
     vector<char*> celltypes;  // celltypes order

@@ -14,16 +14,17 @@ int main(int argc, char** argv)
 {
     if (argc < 3)
     {
-        cerr << "enter <ref h5> <qry h5> [rank mode: 0 => bincount, 1 => count]" << endl;
+        cerr << "enter <ref h5> <qry h5> <result file> [rank mode: 0 => bincount, 1 => count]" << endl;
         exit(-1);
     }
 
     string ref_h5(argv[1]);
     string qry_h5(argv[2]);
+    string stat_file(argv[3]);
     int    rank_mode = 0;
-    if (argc == 4)
+    if (argc == 5)
     {
-        rank_mode = stoi(argv[3]);
+        rank_mode = stoi(argv[4]);
     }
     if(rank_mode == 0)
     {
@@ -39,10 +40,11 @@ int main(int argc, char** argv)
         exit(-1);
     }
 
-    Pipeline pipeline = Pipeline(ref_h5, qry_h5, rank_mode);
+    Pipeline pipeline = Pipeline(ref_h5, qry_h5, stat_file, rank_mode);
     pipeline.train();
     pipeline.score();
     pipeline.finetune();
+    pipeline.dump();
 
     return 0;
 }

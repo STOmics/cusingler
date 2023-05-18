@@ -16,8 +16,8 @@
 #include <fstream>
 using namespace std;
 
-Pipeline::Pipeline(string ref_file, string qry_file, int rank_mode) :
-    ref_file(ref_file), qry_file(qry_file), rank_mode(rank_mode)
+Pipeline::Pipeline(string ref_file, string qry_file, string stat_file, int rank_mode) :
+    ref_file(ref_file), qry_file(qry_file), stat_file(stat_file), rank_mode(rank_mode)
 {
 }
 
@@ -43,7 +43,8 @@ bool Pipeline::score()
     auto& raw_data = data_parser->raw_data;
     raw_data.labels.clear();
     raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 0);
-
+    
+    cells = raw_data.qry_cellnames;
     // for (int i = 0; i < 34; ++i)
     //     cout<<raw_data.labels[i]<<" ";
     // cout<<endl;
@@ -54,7 +55,9 @@ bool Pipeline::score()
     //get score
     Timer timer("ms");
 
-    get_label(raw_data, rank_mode);
+    auto first_label_index = get_label(raw_data, rank_mode);
+    for (auto& i : first_label_index)
+        first_labels.push_back(raw_data.celltypes[i]);
 
     cout << "score cost time(ms): " << timer.toc() << endl;
     // for (int j = 0; j < raw_data.qry_height; ++j)
@@ -113,10 +116,19 @@ bool Pipeline::finetune()
     cout << "finetune cost time(ms): " << timer.toc() << endl;
 
     for (auto& c : res)
-        cout<<raw_data.celltypes[c]<<endl;
+        final_labels.push_back(raw_data.celltypes[c]);
 
     destroy();
 
     return true;
 }
 
+bool Pipeline::dump()
+{
+    ofstream ofs(stat_file);
+    ofs <<"cell\tfirstLabel\tfinalLabel\n";
+    for (int i = 0; i < final_labels.size(); ++i)
+        ofs << cells[i]<<"\t"<<first_labels[i]<<"\t"<<final_labels[i]<<endl;
+    ofs.close();
+    return true;
+}

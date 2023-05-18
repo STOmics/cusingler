@@ -80,6 +80,7 @@ private:
     vector<int> qry_indptr;
     uint32 qry_height, qry_width;
     vector<char*> genes;
+    vector<char*> qry_cellnames;
 
     // Filter genes in case there are differenet genes in ref and qry data
     bool filter_genes;

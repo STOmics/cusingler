@@ -15,7 +15,7 @@ bool destroy();
 bool copyin(InputData& rawdata, vector<uint32>& ctidx, vector<uint32>& ctdiff, vector<uint32>& ctdidx,
     vector<uint16>& ref, vector<uint16>& qry);
 std::vector<uint32> cufinetune(int mod);
-bool get_label(InputData& rawdata,int mod);
+vector<int> get_label(InputData& rawdata,int mod);
 
 bool copyin_score(InputData& rawdata);
 bool destroy_score();
