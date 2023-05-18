@@ -5,6 +5,7 @@
  */
 
 #include "pipeline.h"
+#include "timer.h"
 
 #include <iostream>
 #include <string>
@@ -40,11 +41,13 @@ int main(int argc, char** argv)
         exit(-1);
     }
 
+    Timer timer;
     Pipeline pipeline = Pipeline(ref_h5, qry_h5, stat_file, rank_mode);
     pipeline.train();
     pipeline.score();
     pipeline.finetune();
     pipeline.dump();
+    cout<<"Total cost time(s): "<<timer.toc()<<endl;
 
     return 0;
 }

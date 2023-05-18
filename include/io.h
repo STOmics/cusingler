@@ -29,20 +29,17 @@ public:
 
 private:
     bool loadRefMatrix();
-    bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, int width, vector<float>& res);
-    bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, set<uint32>& cols, vector<uint16>& res);
-
     bool loadQryMatrix();
+
+    // Transform csr to dense matrix
+    bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, int width, vector<float>& res);
+    // Transform csr to dense matrix with column filtered
+    bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices, set<uint32>& cols, vector<uint16>& res);
 
     vector<char*> getGeneIndex(string filename, string gene_index);
 
     // For preprocess
     bool groupbyCelltypes();
-    bool scale(vector< float >& src, const uint32 rows, const uint32 cols,
-               vector< uint16 >& dest);
-    bool filterGenes(vector< uint16 >& src, const uint32 rows, const uint32 cols,
-                      set< uint32 >& genes);
-    void filter();
     void resort();
     void removeCols(vector<float>& data, vector<int>& indptr, vector<int>& indices, map<uint32, uint32>& cols);
 

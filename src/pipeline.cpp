@@ -24,6 +24,7 @@ Pipeline::Pipeline(string ref_file, string qry_file, string stat_file, int rank_
 bool Pipeline::train()
 {
     cout << "start training ref data." << endl;
+    Timer timer;
 
     data_parser = new DataParser(ref_file, qry_file);
     data_parser->findIntersectionGenes();
@@ -31,6 +32,7 @@ bool Pipeline::train()
     data_parser->trainData();
     data_parser->loadQryData();
     data_parser->preprocess();
+    cout<<"train data cost time(s): "<<timer.toc()<<endl;
 
     return true;
 }
@@ -38,6 +40,7 @@ bool Pipeline::train()
 bool Pipeline::score()
 {
     cout << "start get labels." << endl;
+    Timer timer;
 
     data_parser->generateDenseMatrix(0);
     auto& raw_data = data_parser->raw_data;
@@ -45,31 +48,17 @@ bool Pipeline::score()
     raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 0);
     
     cells = raw_data.qry_cellnames;
-    // for (int i = 0; i < 34; ++i)
-    //     cout<<raw_data.labels[i]<<" ";
-    // cout<<endl;
-
+   
     init();
     copyin_score(raw_data);
     
-    //get score
-    Timer timer("ms");
-
     auto first_label_index = get_label(raw_data, rank_mode);
     for (auto& i : first_label_index)
         first_labels.push_back(raw_data.celltypes[i]);
 
-    cout << "score cost time(ms): " << timer.toc() << endl;
-    // for (int j = 0; j < raw_data.qry_height; ++j)
-    // {
-    //     cout<<"label "<<j<<" ";
-    //     for (int i = 0; i < raw_data.ct_num; ++i)
-    //         cout<<raw_data.labels[j*raw_data.ct_num + i]<<" ";
-    //     cout<<endl;
-    // }
-    // exit(-1);
-
     destroy_score();
+
+    cout<<"score data cost time(s): "<<timer.toc()<<endl;
 
     return true;
 }
@@ -78,47 +67,20 @@ bool Pipeline::score()
 bool Pipeline::finetune()
 {
     cout << "start finetune." << endl;
+    Timer timer("ms");
 
     data_parser->generateDenseMatrix(1);    
 
-    // exit(-1);
-
     auto& raw_data = data_parser->raw_data;
-    // raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 0);
-    // ifstream ifs("/data/users/fxzhao/repo/cusingler/build/new");
-    // // ifstream ifs("/data/users/fxzhao/repo/cusingler/build/label");
-    // string v;
-    // raw_data.labels.clear();
-    // while (ifs >> v)
-    // {
-    //     if (v == "label") 
-    //     {
-    //         ifs >> v;
-    //         continue;
-    //     }
-    //     raw_data.labels.push_back(stoi(v));
-    // }
-    // for (int j = 0; j < raw_data.qry_height; ++j)
-    // {
-    //     cout<<"label "<<j<<" ";
-    //     for (int i = 0; i < raw_data.ct_num; ++i)
-    //         cout<<raw_data.labels[j*raw_data.ct_num + i]<<" ";
-    //     cout<<endl;
-    // }
-    // exit(-1);
-
-    init();  //init and copy  in scoredata
-
+   
+    init();
     copyin(raw_data, raw_data.ctidx, raw_data.ctdiff, raw_data.ctdidx, raw_data.ref, raw_data.qry);
-
-    Timer timer("ms");
     auto  res = cufinetune(rank_mode);
-    cout << "finetune cost time(ms): " << timer.toc() << endl;
-
     for (auto& c : res)
         final_labels.push_back(raw_data.celltypes[c]);
 
     destroy();
+    cout << "finetune cost time(ms): " << timer.toc() << endl;
 
     return true;
 }
