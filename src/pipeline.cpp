@@ -10,14 +10,14 @@
 
 #include <cassert>
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <set>
 #include <thread>
-#include <fstream>
 using namespace std;
 
-Pipeline::Pipeline(string ref_file, string qry_file, string stat_file, int rank_mode) :
-    ref_file(ref_file), qry_file(qry_file), stat_file(stat_file), rank_mode(rank_mode)
+Pipeline::Pipeline(string ref_file, string qry_file, string stat_file, int rank_mode)
+    : ref_file(ref_file), qry_file(qry_file), stat_file(stat_file), rank_mode(rank_mode)
 {
 }
 
@@ -32,7 +32,7 @@ bool Pipeline::train()
     data_parser->trainData();
     data_parser->loadQryData();
     data_parser->preprocess();
-    cout<<"train data cost time(s): "<<timer.toc()<<endl;
+    cout << "train data cost time(s): " << timer.toc() << endl;
 
     return true;
 }
@@ -46,36 +46,36 @@ bool Pipeline::score()
     auto& raw_data = data_parser->raw_data;
     raw_data.labels.clear();
     raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 0);
-    
+
     cells = raw_data.qry_cellnames;
-   
+
     init();
     copyin_score(raw_data);
-    
+
     auto first_label_index = get_label(raw_data, rank_mode);
     for (auto& i : first_label_index)
         first_labels.push_back(raw_data.celltypes[i]);
 
     destroy_score();
 
-    cout<<"score data cost time(s): "<<timer.toc()<<endl;
+    cout << "score data cost time(s): " << timer.toc() << endl;
 
     return true;
 }
-
 
 bool Pipeline::finetune()
 {
     cout << "start finetune." << endl;
     Timer timer("ms");
 
-    data_parser->generateDenseMatrix(1);    
+    data_parser->generateDenseMatrix(1);
 
     auto& raw_data = data_parser->raw_data;
-   
+
     init();
-    copyin(raw_data, raw_data.ctidx, raw_data.ctdiff, raw_data.ctdidx, raw_data.ref, raw_data.qry);
-    auto  res = cufinetune(rank_mode);
+    copyin(raw_data, raw_data.ctidx, raw_data.ctdiff, raw_data.ctdidx, raw_data.ref,
+           raw_data.qry);
+    auto res = cufinetune(rank_mode);
     for (auto& c : res)
         final_labels.push_back(raw_data.celltypes[c]);
 
@@ -88,9 +88,9 @@ bool Pipeline::finetune()
 bool Pipeline::dump()
 {
     ofstream ofs(stat_file);
-    ofs <<"cell\tfirstLabel\tfinalLabel\n";
+    ofs << "cell\tfirstLabel\tfinalLabel\n";
     for (int i = 0; i < final_labels.size(); ++i)
-        ofs << cells[i]<<"\t"<<first_labels[i]<<"\t"<<final_labels[i]<<endl;
+        ofs << cells[i] << "\t" << first_labels[i] << "\t" << final_labels[i] << endl;
     ofs.close();
     return true;
 }

@@ -13,12 +13,12 @@
 bool init();
 
 // for step: score data
-bool copyin_score(InputData& rawdata);
-bool destroy_score();
-vector<int> get_label(InputData& rawdata,int mod);
+bool        copyin_score(InputData& rawdata);
+bool        destroy_score();
+vector<int> get_label(InputData& rawdata, int mod);
 
 // for step: fintune
-bool copyin(InputData& rawdata, vector<uint32>& ctidx, vector<uint32>& ctdiff, vector<uint32>& ctdidx,
-    vector<uint16>& ref, vector<uint16>& qry);
+bool copyin(InputData& rawdata, vector<uint32>& ctidx, vector<uint32>& ctdiff,
+            vector<uint32>& ctdidx, vector<uint16>& ref, vector<uint16>& qry);
 bool destroy();
 std::vector<uint32> cufinetune(int mod);

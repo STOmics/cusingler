@@ -6,8 +6,8 @@
 
 #pragma once
 
-#include "types.h"
 #include "io.h"
+#include "types.h"
 
 #include <set>
 #include <string>
@@ -24,19 +24,19 @@ public:
     bool score();
     bool finetune();
     bool dump();
-    
+
 private:
     // Input parameters
     string ref_file;
     string qry_file;
     string stat_file;
-    int rank_mode;
+    int    rank_mode;
 
     // Manage input data
-    DataParser *data_parser;
+    DataParser* data_parser;
 
     // Stat data
-    vector<char*> cells;
+    vector<char*>  cells;
     vector<string> first_labels;
     vector<string> final_labels;
 };
