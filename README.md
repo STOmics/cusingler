@@ -2,8 +2,6 @@
 
 基于python版本SingleR软件,使用cuda加速.
 
-开发中...
-
 ## 依赖库
 
 * gcc/g++ 9.4.0 
@@ -46,5 +44,21 @@ make
 ## 运行
 
 ```sh
-./install/bin/cusingler ./data/small_input.h5
+./install/bin/cusingler ./data/5w_ref.h5ad ./data/Mouse_brain_D1_qry.h5ad stat.tsv 0
 ```
+
+参数解释:
+
+* 第一个参数表示reference的数据,格式为h5ad
+* 第二个参数表示query的数据,格式为h5ad
+* 第三个参数为输出文件,按tab分割的三列数据,分别表示cell/firstLabel/finalLabel
+* 第四个参数可选,默认0表示bincount方式做rank,设为1表示正常count
+
+## 输入文件要求
+
+* ref/qry输入文件均需有/X/data /X/indices /X/indptr 存储矩阵数据; 有/var/_index 存储基因名
+* ref需有 /obs/ClusterName/codes /obs/ClusterName/categories 存储分类结果
+* qry需有 /obs/_index 存储细胞名
+
+* 程序不会对h5ad数据做log2处理,如有此需要请客户自行对数据做预处理
+* 如遇ref和qry的gene不完全一致,程序会自动取基因的交集参与计算,如果没有一个相同基因,则程序报错退出
