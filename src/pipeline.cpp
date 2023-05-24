@@ -16,8 +16,8 @@
 #include <thread>
 using namespace std;
 
-Pipeline::Pipeline(string ref_file, string qry_file, string stat_file, int rank_mode)
-    : ref_file(ref_file), qry_file(qry_file), stat_file(stat_file), rank_mode(rank_mode)
+Pipeline::Pipeline(string ref_file, string qry_file, string stat_file)
+    : ref_file(ref_file), qry_file(qry_file), stat_file(stat_file)
 {
 }
 
@@ -42,7 +42,9 @@ bool Pipeline::score()
     cout << "start get labels." << endl;
     Timer timer;
 
-    data_parser->generateDenseMatrix(0);
+    uint64 max_uniq_gene = 0;
+    data_parser->generateDenseMatrix(0, max_uniq_gene);
+    cout << "max uniq gene: " << max_uniq_gene << endl;
     auto& raw_data = data_parser->raw_data;
     raw_data.labels.clear();
     raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 0);
@@ -52,7 +54,7 @@ bool Pipeline::score()
     init();
     copyin_score(raw_data);
 
-    auto first_label_index = get_label(raw_data, rank_mode);
+    auto first_label_index = get_label(raw_data, max_uniq_gene);
     for (auto& i : first_label_index)
         first_labels.push_back(raw_data.celltypes[i]);
 
@@ -66,21 +68,23 @@ bool Pipeline::score()
 bool Pipeline::finetune()
 {
     cout << "start finetune." << endl;
-    Timer timer("ms");
+    Timer timer("s");
 
-    data_parser->generateDenseMatrix(1);
+    uint64 max_uniq_gene = 0;
+    data_parser->generateDenseMatrix(1, max_uniq_gene);
+    cout << "max uniq gene: " << max_uniq_gene << endl;
 
     auto& raw_data = data_parser->raw_data;
 
     init();
     copyin(raw_data, raw_data.ctidx, raw_data.ctdiff, raw_data.ctdidx, raw_data.ref,
            raw_data.qry);
-    auto res = cufinetune(rank_mode);
+    auto res = cufinetune(max_uniq_gene);
     for (auto& c : res)
         final_labels.push_back(raw_data.celltypes[c]);
 
     destroy();
-    cout << "finetune cost time(ms): " << timer.toc() << endl;
+    cout << "finetune cost time(s): " << timer.toc() << endl;
 
     return true;
 }

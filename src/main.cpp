@@ -13,38 +13,19 @@ using namespace std;
 
 int main(int argc, char** argv)
 {
-    if (argc < 3)
+    // TODO: set cpu number and gpu id from user input
+    if (argc != 4)
     {
-        cerr << "enter <ref h5> <qry h5> <result file> [rank mode: 0 => bincount, 1 => "
-                "count]"
-             << endl;
+        cerr << "enter <ref h5> <qry h5> <result file>" << endl;
         exit(-1);
     }
 
     string ref_h5(argv[1]);
     string qry_h5(argv[2]);
     string stat_file(argv[3]);
-    int    rank_mode = 0;
-    if (argc == 5)
-    {
-        rank_mode = stoi(argv[4]);
-    }
-    if (rank_mode == 0)
-    {
-        cout << "rank data by bincount" << endl;
-    }
-    else if (rank_mode == 1)
-    {
-        cout << "rank data by count" << endl;
-    }
-    else
-    {
-        cerr << "invalid rank mode, please enter [0 => bincount, 1 => count]" << endl;
-        exit(-1);
-    }
 
     Timer    timer;
-    Pipeline pipeline = Pipeline(ref_h5, qry_h5, stat_file, rank_mode);
+    Pipeline pipeline = Pipeline(ref_h5, qry_h5, stat_file);
     pipeline.train();
     pipeline.score();
     pipeline.finetune();

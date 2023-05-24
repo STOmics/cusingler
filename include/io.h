@@ -25,7 +25,7 @@ public:
     bool loadRefData();
     bool loadQryData();
     bool preprocess();
-    bool generateDenseMatrix(int step);
+    bool generateDenseMatrix(int step, uint64& max_uniq_gene);
 
 private:
     bool loadRefMatrix();
@@ -36,7 +36,7 @@ private:
                    int width, vector<float>& res);
     // Transform csr to dense matrix with column filtered
     bool csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices,
-                   set<uint32>& cols, vector<uint16>& res);
+                   set<uint32>& cols, vector<uint16>& res, uint64& max_uniq_gene);
 
     vector<char*> getGeneIndex(string filename, string gene_index);
 

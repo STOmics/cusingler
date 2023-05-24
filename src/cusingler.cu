@@ -1,8 +1,5 @@
 #include "cusingler.cuh"
 #include "timer.h"
-#include <cub/device/device_radix_sort.cuh>
-#include <thrust/device_vector.h>
-#include <thrust/host_vector.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,27 +15,22 @@
 
 #include "cuda_runtime.h"
 #include "math_constants.h"
-#define LOG
-cudaError_t    errcode;
+
 cudaStream_t   stream;
 uint16 *       d_ref, *d_qry;
 vector<float>  h_labels;
 uint32         ref_height, ref_width, qry_height, qry_width;
-uint32         ref_lines_width;
 uint32         ct_num;
 vector<uint32> h_ctidx;
 vector<uint32> h_ctdiff, h_ctdidx;
 size_t         pitchref;
 size_t         pitchqry;
-size_t         pitch_ref_lines;
 
 uint32 *d_gene_idx, *d_cell_idx;
 uint16 *d_ref_lines, *d_qry_line;
 float * d_ref_rank, *d_qry_rank;
 float*  d_score;
-int*    d_ref_idx;
 
-cudaError_t err;
 #define CHECK(call)                                                            \
     {                                                                          \
         const cudaError_t error = call;                                        \
@@ -49,6 +41,7 @@ cudaError_t err;
             exit(1);                                                           \
         }                                                                      \
     }
+
 // unit is MB
 uint32 getUsedMem()
 {
@@ -63,11 +56,9 @@ bool init()
     d_ref      = NULL;
     d_qry      = NULL;
     ref_height = ref_width = qry_height = qry_width = 0;
-    ref_lines_width                                 = 0;
     ct_num                                          = 0;
     pitchref                                        = 0;
     pitchqry                                        = 0;
-    pitch_ref_lines                                 = 0;
     return true;
 }
 
@@ -97,6 +88,7 @@ bool destroy_score()
     cudaFree(d_gene_idx);
     cudaFree(d_cell_idx);
     cudaFree(d_qry_line);
+
     cudaFree(d_qry_rank);
     cudaFree(d_ref_rank);
     cudaFree(d_score);
@@ -183,23 +175,23 @@ bool copyin_score(InputData& rawdata)
     qry_width  = rawdata.qry_width;
     ct_num     = rawdata.ct_num;
 
-    cudaMalloc(( void** )&d_ref, rawdata.ref.size() * sizeof(uint16));
+    CHECK(cudaMalloc(( void** )&d_ref, rawdata.ref.size() * sizeof(uint16)));
     CHECK(cudaMemcpy(d_ref, rawdata.ref.data(), rawdata.ref.size() * sizeof(uint16),
                      cudaMemcpyHostToDevice));
 
-    cudaMalloc(( void** )&d_qry, rawdata.qry.size() * sizeof(uint16));
+    CHECK(cudaMalloc(( void** )&d_qry, rawdata.qry.size() * sizeof(uint16)));
     CHECK(cudaMemcpy(d_qry, rawdata.qry.data(), rawdata.qry.size() * sizeof(uint16),
                      cudaMemcpyHostToDevice));
 
     h_ctidx = rawdata.ctidx;
 
-    cudaMalloc(( void** )&d_gene_idx, qry_width * sizeof(uint32));
-    cudaMalloc(( void** )&d_cell_idx, ref_height * sizeof(uint32));
-    cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16));
+    CHECK(cudaMalloc(( void** )&d_gene_idx, qry_width * sizeof(uint32)));
+    CHECK(cudaMalloc(( void** )&d_cell_idx, ref_height * sizeof(uint32)));
+    CHECK(cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16)));
 
-    cudaMalloc(( void** )&d_ref_rank, rawdata.ref.size() * sizeof(float));
-    cudaMalloc(( void** )&d_qry_rank, rawdata.qry.size() * sizeof(float));
-    cudaMalloc(( void** )&d_score, 1024 * ref_height * sizeof(float));
+    CHECK(cudaMalloc(( void** )&d_ref_rank, rawdata.ref.size() * sizeof(float)));
+    CHECK(cudaMalloc(( void** )&d_qry_rank, rawdata.qry.size() * sizeof(float)));
+    CHECK(cudaMalloc(( void** )&d_score, 1024 * ref_height * sizeof(float)));
 
     std::cout << "score() used gpu mem(MB): " << getUsedMem() << std::endl;
 
@@ -221,12 +213,12 @@ bool copyin(InputData& rawdata, vector<uint32>& ctidx, vector<uint32>& ctdiff,
     CHECK(cudaMallocPitch(( void** )&d_qry, &pitchqry, qry_width * sizeof(uint16),
                           qry_height));
 
-    cudaMemcpy2DAsync(d_ref, pitchref, ref.data(), ref_width * sizeof(uint16),
-                      ref_width * sizeof(uint16), ref_height, cudaMemcpyHostToDevice,
-                      stream);
-    cudaMemcpy2DAsync(d_qry, pitchqry, qry.data(), qry_width * sizeof(uint16),
-                      qry_width * sizeof(uint16), qry_height, cudaMemcpyHostToDevice,
-                      stream);
+    CHECK(cudaMemcpy2DAsync(d_ref, pitchref, ref.data(), ref_width * sizeof(uint16),
+                            ref_width * sizeof(uint16), ref_height,
+                            cudaMemcpyHostToDevice, stream));
+    CHECK(cudaMemcpy2DAsync(d_qry, pitchqry, qry.data(), qry_width * sizeof(uint16),
+                            qry_width * sizeof(uint16), qry_height,
+                            cudaMemcpyHostToDevice, stream));
 
     h_labels = rawdata.labels;
 
@@ -237,14 +229,14 @@ bool copyin(InputData& rawdata, vector<uint32>& ctidx, vector<uint32>& ctdiff,
 
     cudaStreamSynchronize(stream);
 
-    cudaMalloc(( void** )&d_gene_idx, qry_width * sizeof(uint32));
-    cudaMalloc(( void** )&d_cell_idx, ref_height * sizeof(uint32));
-    cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16));
-    cudaMalloc(( void** )&d_qry_rank, qry_width * sizeof(float));
+    CHECK(cudaMalloc(( void** )&d_gene_idx, qry_width * sizeof(uint32)));
+    CHECK(cudaMalloc(( void** )&d_cell_idx, ref_height * sizeof(uint32)));
+    CHECK(cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16)));
+    CHECK(cudaMalloc(( void** )&d_qry_rank, qry_width * sizeof(float)));
 
-    cudaMalloc(( void** )&d_ref_lines, 200000000 * sizeof(uint16));
-    cudaMalloc(( void** )&d_ref_rank, 200000000 * sizeof(float));
-    cudaMalloc(( void** )&d_score, 1000000 * sizeof(float));
+    CHECK(cudaMalloc(( void** )&d_ref_lines, ref.size() * sizeof(uint16)));
+    CHECK(cudaMalloc(( void** )&d_ref_rank, ref.size() * sizeof(float)));
+    CHECK(cudaMalloc(( void** )&d_score, ref_height * sizeof(float)));
 
     std::cout << "finetune() used gpu mem(MB): " << getUsedMem() << std::endl;
 
@@ -472,52 +464,60 @@ __global__ void rankdata_bin3_pitch(uint16* qry, const size_t pitch, const uint3
 }
 
 __global__ void rankdata_bin3(uint16* qry, const uint32 cols, const uint32 rows,
-                              float* res)
+                              const uint64 max_uniq_gene, float* res)
 {
-    __shared__ int   bins[128];
-    __shared__ float ranks[128];
-    int              bid = blockIdx.x;
-    int              tid = threadIdx.x;
+    extern __shared__ int mem[];
+    int*                  bins  = mem;
+    float*                ranks = ( float* )&bins[max_uniq_gene];
 
-    int step = cols / 64;
-    if (cols % 64 != 0)
+    int bid     = blockIdx.x;
+    int tid     = threadIdx.x;
+    int threads = blockDim.x;
+
+    int step = cols / threads;
+    if (cols % threads != 0)
         step++;
+    int step1 = max_uniq_gene / threads;
+    if (max_uniq_gene % threads != 0)
+        step1++;
 
-    if (bid < rows)
+    for (int i = 0; i < step1; ++i)
     {
-        bins[tid * 2]     = 0;
-        bins[tid * 2 + 1] = 0;
-        __syncthreads();
-
-        uint16* q = qry + bid * cols;
-        float*  r = res + bid * cols;
-        // travel for getting bin count
-        for (int i = tid * step; i < (tid + 1) * step; ++i)
+        if ((tid * step1 + i) < max_uniq_gene)
         {
-            if (i < cols)
-                atomicAdd(&bins[q[i]], 1);
+            bins[tid * step1 + i] = 0;
         }
-        __syncthreads();
+    }
+    __syncthreads();
 
-        // calculate real rank
-        if (tid == 0)
-        {
-            int start = 0;
-            for (int i = 0; i < 128; ++i)
-            {
-                // if (bins[i] == 0) continue;
-                ranks[i] = start + (bins[i] + 1) * 0.5;
-                start += bins[i];
-            }
-        }
-        __syncthreads();
+    uint16* q = qry + bid * cols;
+    float*  r = res + bid * cols;
+    // travel for getting bin count
+    for (int i = tid * step; i < (tid + 1) * step; ++i)
+    {
+        if (i < cols)
+            atomicAdd(&bins[q[i]], 1);
+    }
+    __syncthreads();
 
-        // assign rank value
-        for (int i = tid * step; i < (tid + 1) * step; ++i)
+    // calculate real rank
+    if (tid == 0)
+    {
+        int start = 0;
+        for (int i = 0; i < max_uniq_gene; ++i)
         {
-            if (i < cols)
-                r[i] = ranks[q[i]];
+            // if (bins[i] == 0) continue;
+            ranks[i] = start + (bins[i] + 1) * 0.5;
+            start += bins[i];
         }
+    }
+    __syncthreads();
+
+    // assign rank value
+    for (int i = tid * step; i < (tid + 1) * step; ++i)
+    {
+        if (i < cols)
+            r[i] = ranks[q[i]];
     }
 }
 
@@ -698,41 +698,35 @@ float percentile(vector<float> arr, int len, float p)
     return res;
 }
 
-vector<int> get_label(InputData& rawdata, int mod)
+bool bincount(const uint64 max_uniq_gene)
 {
-    if (mod == 0)
-    {
-        rankdata_bin3<<<ref_height, 64>>>(d_ref, ref_width, ref_height, d_ref_rank);
-        err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            printf("rankdata_bin3 CUDA Error: %s\n", cudaGetErrorString(err));
-        }
+    // TODO: Get total amount of shared memory per block from device
+    return max_uniq_gene <= 1024;
+}
 
-        rankdata_bin3<<<qry_height, 64>>>(d_qry, qry_width, qry_height, d_qry_rank);
-        err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            printf("qry rank CUDA Error: %s\n", cudaGetErrorString(err));
-        }
+vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene)
+{
+    if (bincount(max_uniq_gene))
+    {
+        // Using bincount method
+        int shared_mem = max_uniq_gene * (sizeof(int) + sizeof(float));
+        rankdata_bin3<<<ref_height, 64, shared_mem>>>(d_ref, ref_width, ref_height,
+                                                      max_uniq_gene, d_ref_rank);
+        CHECK(cudaGetLastError());
+
+        rankdata_bin3<<<qry_height, 64, shared_mem>>>(d_qry, qry_width, qry_height,
+                                                      max_uniq_gene, d_qry_rank);
+        CHECK(cudaGetLastError());
     }
-    else if (mod == 1)
+    else
     {
         rankdata_batch<<<(ref_height * ref_width - 1) / 512 + 1, 512>>>(
-            d_ref, d_ref_rank, ref_height, ref_width);
-        err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            printf("rankdata_batch CUDA Error: %s\n", cudaGetErrorString(err));
-        }
+            d_ref, d_ref_rank, ref_width, ref_height);
+        CHECK(cudaGetLastError());
 
         rankdata_batch<<<(qry_height * qry_width - 1) / 512 + 1, 512>>>(
-            d_qry, d_qry_rank, qry_height, qry_width);
-        err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            printf("qry rank CUDA Error: %s\n", cudaGetErrorString(err));
-        }
+            d_qry, d_qry_rank, qry_width, qry_height);
+        CHECK(cudaGetLastError());
     }
 
     // get all qry rank and calculate score
@@ -780,17 +774,13 @@ vector<int> get_label(InputData& rawdata, int mod)
     {
         spearman<<<ref_height, 1024>>>(d_qry_rank, line, d_ref_rank, qry_width,
                                        qry_height, ref_height, d_score);
-        err = cudaGetLastError();
-        if (err != cudaSuccess)
-            std::cout << "Error: " << cudaGetErrorString(err) << std::endl;
+        CHECK(cudaGetLastError());
 
         vector<float> h_score;
         h_score.resize(1024 * ref_height, 0);
 
         CHECK(cudaMemcpy(h_score.data(), d_score, 1024 * ref_height * sizeof(float),
                          cudaMemcpyDeviceToHost));
-        size_t start     = 0;
-        size_t total_len = 0;
 
         vector<int> h_labels;
         h_labels.resize(1024 * ct_num, 0);
@@ -815,7 +805,8 @@ vector<int> get_label(InputData& rawdata, int mod)
     return first_labels;
 }
 
-vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels, const int mod)
+vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,
+                              const uint64 max_uniq_gene)
 {
     set<uint32> uniq_genes;
     int         gene_thre = round(500 * pow((2 / 3.0), log2(top_labels.size())));
@@ -842,20 +833,12 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels, const int 
 
     get_device_qry_line<<<(h_gene_idx.size() - 1) / 1024 + 1, 1024>>>(
         d_gene_idx, qry, h_gene_idx.size(), qry_width, d_qry_line);
-    err = cudaGetLastError();
-    if (err != cudaSuccess)
-    {
-        printf("get_device_qry_line CUDA Error: %s\n", cudaGetErrorString(err));
-    }
+    CHECK(cudaGetLastError());
 
     // get rank of qry data
     rankdata<<<(h_gene_idx.size() - 1) / 1024 + 1, 1024>>>(d_qry_line, d_qry_rank,
                                                            h_gene_idx.size());
-    err = cudaGetLastError();
-    if (err != cudaSuccess)
-    {
-        printf("qry rank CUDA Error: %s\n", cudaGetErrorString(err));
-    }
+    CHECK(cudaGetLastError());
 
     vector<pair<size_t, size_t>> temp;
     size_t                       total_len = 0;
@@ -894,35 +877,27 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels, const int 
     get_device_ref_lines<<<gridDim, blockDim>>>(d_gene_idx, h_gene_idx.size(), d_cell_idx,
                                                 h_cell_idx.size(), d_ref, ref_width,
                                                 ( uint64 )pitchref, d_ref_lines);
+    CHECK(cudaGetLastError());
 
-    if (mod == 0)
+    if (bincount(max_uniq_gene))
     {
-        rankdata_bin3<<<total_len, 64>>>(d_ref_lines, h_gene_idx.size(), total_len,
-                                         d_ref_rank);
-        err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            printf("rankdata_bin3 CUDA Error: %s\n", cudaGetErrorString(err));
-        }
+        int shared_mem = max_uniq_gene * (sizeof(int) + sizeof(float));
+        rankdata_bin3<<<total_len, 64, shared_mem>>>(
+            d_ref_lines, h_gene_idx.size(), total_len, max_uniq_gene, d_ref_rank);
+        CHECK(cudaGetLastError());
     }
-    else if (mod == 1)
+    else
     {
         // len=h_cell_idx.size()
         rankdata_batch<<<(h_cell_idx.size() * h_gene_idx.size() - 1) / 512 + 1, 512>>>(
             d_ref_lines, d_ref_rank, h_gene_idx.size(), h_cell_idx.size());
-        err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            printf("rankdata_batch CUDA Error: %s\n", cudaGetErrorString(err));
-        }
+        CHECK(cudaGetLastError());
     }
 
     // spearman
     spearman_reduce<<<total_len, 128>>>(d_qry_rank, d_ref_rank, h_gene_idx.size(),
                                         total_len, d_score);
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess)
-        std::cout << "Error: " << cudaGetErrorString(err) << std::endl;
+    CHECK(cudaGetLastError());
 
     vector<float> h_score;
     h_score.resize(total_len, 0);
@@ -947,7 +922,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels, const int 
     float thre = *ele.second - 0.05;
     if (std::isnan(*ele.second))
     {
-        cout << "nan" << endl;
+        cerr << "Got score 'nan'" << endl;
         exit(-1);
     }
     vector<uint32> res;
@@ -963,9 +938,9 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels, const int 
 
     return res;
 }
-vector<uint32> cufinetune(int mod)
+vector<uint32> cufinetune(const uint64 max_uniq_gene)
 {
-    Timer timer("ms");
+    Timer timer("s");
 
     vector<uint32> res;
     // process each cell
@@ -984,13 +959,13 @@ vector<uint32> cufinetune(int mod)
 
         while (top_labels.size() > 1)
         {
-            top_labels = finetune_round(qry_head, top_labels, mod);
+            top_labels = finetune_round(qry_head, top_labels, max_uniq_gene);
         }
 
         res.push_back(top_labels.front());
         if (i != 0 && i % 1000 == 0)
         {
-            cout << "processed " << i << " cells cost time(ms): " << timer.toc() << endl;
+            cout << "processed " << i << " cells cost time(s): " << timer.toc() << endl;
         }
     }
 

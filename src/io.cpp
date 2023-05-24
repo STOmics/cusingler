@@ -297,7 +297,7 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
 }
 
 bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>& indices,
-                           set<uint32>& cols, vector<uint16>& res)
+                           set<uint32>& cols, vector<uint16>& res, uint64& max_uniq_gene)
 {
 
     int                 width = cols.size();
@@ -327,6 +327,7 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
                 uniq.insert(data[i]);
             }
         }
+        max_uniq_gene = max(uniq.size() + 1, max_uniq_gene);
         vector<float>                order(uniq.begin(), uniq.end());
         unordered_map<float, uint16> index;
         for (uint16 j = 0; j < order.size(); ++j)
@@ -499,7 +500,7 @@ void DataParser::removeCols(vector<float>& data, vector<int>& indptr,
 }
 
 // Transform matrix format from csr to dense
-bool DataParser::generateDenseMatrix(int step)
+bool DataParser::generateDenseMatrix(int step, uint64& max_uniq_gene)
 {
     set<uint32> gene_set;
     if (step == 0)
@@ -544,7 +545,7 @@ bool DataParser::generateDenseMatrix(int step)
         }
     }
 
-    csr2dense(ref_data, ref_indptr, ref_indices, gene_set, raw_data.ref);
+    csr2dense(ref_data, ref_indptr, ref_indices, gene_set, raw_data.ref, max_uniq_gene);
     ref_width           = gene_set.size();
     raw_data.ref_width  = ref_width;
     raw_data.ref_height = ref_height;
@@ -552,7 +553,7 @@ bool DataParser::generateDenseMatrix(int step)
     cout << "ref data shape: " << ref_height << " x " << ref_width
          << " non-zero number: " << ref_data.size() << endl;
 
-    csr2dense(qry_data, qry_indptr, qry_indices, gene_set, raw_data.qry);
+    csr2dense(qry_data, qry_indptr, qry_indices, gene_set, raw_data.qry, max_uniq_gene);
     qry_width           = gene_set.size();
     raw_data.qry_height = qry_height;
     raw_data.qry_width  = qry_width;
