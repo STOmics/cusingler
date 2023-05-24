@@ -75,7 +75,32 @@ bool DataParser::loadRefMatrix()
 
 bool DataParser::trainData()
 {
+    auto task = [](vector<vector<float>>& matrix, const int start, const int end, const int len, vector<float>& res)
+    {
+        for (int i = start; i < end; ++i)
+        {
+            auto& cols = matrix[i];
+            cols.resize(len, 0);
+            float median = 0;
+            if (cols.size() % 2 == 0)
+            {
+                std::sort(cols.begin(), cols.end());
+                median = (cols[cols.size() / 2] + cols[cols.size() / 2 - 1]) / 2;
+            }
+            else
+            {
+                std::nth_element(cols.begin(), cols.begin() + cols.size() / 2,
+                                    cols.end());
+                median = cols[cols.size() / 2];
+            }
+            res[i] = median;
+        }
+    };
+
     // Calculate median gene value for each celltype
+    uint32 step = ref_width / thread_num;
+    if ((ref_width % thread_num) != 0)
+        step++;
     map<uint8, vector<float>> median_map;
     for (int i = 0; i < ref_ctidx.size(); i += 2)
     {
@@ -83,40 +108,33 @@ bool DataParser::trainData()
         auto pos = ref_ctidx[i];
         auto len = ref_ctidx[i + 1];
 
-        vector<float> sub_ref;
-        sub_ref.resize(len * ref_width, 0);
-        int line = 0;
+        // Collect sub 2d-array
+        vector<vector<float>> sub_ref(ref_width);
         for (int idx = pos; idx < pos + len; ++idx)
         {
             auto start = ref_indptr[idx];
             auto end   = ref_indptr[idx + 1];
             for (uint32 i = start; i < end; ++i)
             {
-                sub_ref[line * ref_width + ref_indices[i]] = ref_data[i];
+                sub_ref[ref_indices[i]].push_back(ref_data[i]);
             }
-            line++;
         }
 
-        vector<float> median;
-        for (uint32 i = 0; i < ref_width; ++i)
+        // Calculating median value using multi-threading
+        vector<float> median(ref_width, 0);
+        vector<thread> threads;
+        for (int i = 0; i < thread_num; ++i)
         {
-            vector<float> cols;
-            for (uint32 j = 0; j < len; ++j)
-            {
-                cols.push_back(sub_ref[j * ref_width + i]);
-            }
-            if (cols.size() % 2 == 0)
-            {
-                std::sort(cols.begin(), cols.end());
-                median.push_back((cols[cols.size() / 2] + cols[cols.size() / 2 - 1]) / 2);
-            }
-            else
-            {
-                std::nth_element(cols.begin(), cols.begin() + cols.size() / 2,
-                                 cols.end());
-                median.push_back(cols[cols.size() / 2]);
-            }
+            int start = i * step;
+            int end = min((i+1)*step, ref_width);
+            thread th(task, std::ref(sub_ref), start, end, len, std::ref(median));
+            threads.push_back(std::move(th));
         }
+        for (auto& th : threads)
+        {
+            th.join();
+        }
+
         median_map.insert({ ct, median });
     }
 
@@ -169,11 +187,6 @@ bool DataParser::trainData()
             }
         }
     }
-
-    cout << "common genes size: " << common_genes.size() << endl;
-    cout << "threshold genes size: " << thre_genes.size() << endl;
-    cout << "ref_train_idxs size: " << ref_train_idxs.size() << endl;
-    cout << "ref_train_values size: " << ref_train_values.size() << endl;
 
     return true;
 }
