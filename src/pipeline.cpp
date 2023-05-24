@@ -16,17 +16,23 @@
 #include <thread>
 using namespace std;
 
-Pipeline::Pipeline(string ref_file, string qry_file, string stat_file)
-    : ref_file(ref_file), qry_file(qry_file), stat_file(stat_file)
+Pipeline::Pipeline(string ref_file, string qry_file, string stat_file, int cores, int gpuid)
+    : ref_file(ref_file), qry_file(qry_file), stat_file(stat_file), cores(cores), gpuid(gpuid)
 {
 }
 
 bool Pipeline::train()
 {
+    if (!initGPU(gpuid))
+    {
+        cerr<<"Fail to initlize gpu with id: "<<gpuid<<endl;
+        exit(-1);
+    }
+
     cout << "start training ref data." << endl;
     Timer timer;
 
-    data_parser = new DataParser(ref_file, qry_file);
+    data_parser = new DataParser(ref_file, qry_file, cores);
     data_parser->findIntersectionGenes();
     data_parser->loadRefData();
     data_parser->trainData();
@@ -51,10 +57,12 @@ bool Pipeline::score()
 
     cells = raw_data.qry_cellnames;
 
-    init();
-    copyin_score(raw_data);
+    if (!copyin_score(raw_data))
+    {
+        exit(-1);
+    }
 
-    auto first_label_index = get_label(raw_data, max_uniq_gene);
+    auto first_label_index = get_label(raw_data, max_uniq_gene, cores);
     for (auto& i : first_label_index)
         first_labels.push_back(raw_data.celltypes[i]);
 
@@ -76,9 +84,10 @@ bool Pipeline::finetune()
 
     auto& raw_data = data_parser->raw_data;
 
-    init();
-    copyin(raw_data, raw_data.ctidx, raw_data.ctdiff, raw_data.ctdidx, raw_data.ref,
-           raw_data.qry);
+    if (!copyin(raw_data))
+    {
+        exit(-1);
+    }
     auto res = cufinetune(max_uniq_gene);
     for (auto& c : res)
         final_labels.push_back(raw_data.celltypes[c]);

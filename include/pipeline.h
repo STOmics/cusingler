@@ -17,7 +17,7 @@ using namespace std;
 class Pipeline
 {
 public:
-    Pipeline(string ref_file, string qry_file, string stat_file);
+    Pipeline(string ref_file, string qry_file, string stat_file, int cores, int gpuid);
     ~Pipeline(){};
 
     bool train();
@@ -30,6 +30,8 @@ private:
     string ref_file;
     string qry_file;
     string stat_file;
+    int cores;
+    int gpuid;
 
     // Manage input data
     DataParser* data_parser;

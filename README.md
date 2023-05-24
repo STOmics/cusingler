@@ -16,6 +16,7 @@ conda create -n cs python=3.8
 conda activate cs
 conda install -c conda-forge mamba
 mamba install -c conda-forge hdf5 cmake gcc==9.4.0 gxx==9.4.0 gxx_linux-64=9.4 gcc_linux-64=9.4 sysroot_linux-64=2.17
+mamba install -c conda-forge cli11
 ```
 
 ## 编译
@@ -44,7 +45,12 @@ make
 ## 运行
 
 ```sh
-./install/bin/cusingler ./data/5w_ref.h5ad ./data/Mouse_brain_D1_qry.h5ad stat.tsv 0
+./install/bin/cusingler \
+    -r ./data/5w_ref.h5ad \
+    -q ./data/Mouse_brain_D1_qry.h5ad \
+    -o stat.tsv \
+    -c 20 \
+    -g 0
 ```
 
 参数解释:
@@ -52,7 +58,8 @@ make
 * 第一个参数表示reference的数据,格式为h5ad
 * 第二个参数表示query的数据,格式为h5ad
 * 第三个参数为输出文件,按tab分割的三列数据,分别表示cell/firstLabel/finalLabel
-* 第四个参数可选,默认0表示bincount方式做rank,设为1表示正常count
+* 第四个参数20表示使用的cpu核数,默认为自动检测
+* 第五个参数0表示使用第0块GPU卡,默认为0,可设置0,1,2等实际存在的GPU卡
 
 ## 输入文件要求
 

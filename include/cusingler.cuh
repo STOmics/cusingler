@@ -10,15 +10,14 @@
 
 #include <vector>
 
-bool init();
+bool initGPU(const int gpuid);
 
 // for step: score data
 bool        copyin_score(InputData& rawdata);
 bool        destroy_score();
-vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene);
+vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores);
 
 // for step: fintune
-bool copyin(InputData& rawdata, vector<uint32>& ctidx, vector<uint32>& ctdiff,
-            vector<uint32>& ctdidx, vector<uint16>& ref, vector<uint16>& qry);
+bool copyin(InputData& rawdata);
 bool destroy();
 std::vector<uint32> cufinetune(const uint64 max_uniq_gene);

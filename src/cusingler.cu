@@ -31,6 +31,8 @@ uint16 *d_ref_lines, *d_qry_line;
 float * d_ref_rank, *d_qry_rank;
 float*  d_score;
 
+int shared_mem_per_block;
+
 #define CHECK(call)                                                            \
     {                                                                          \
         const cudaError_t error = call;                                        \
@@ -50,16 +52,29 @@ uint32 getUsedMem()
     return (total - free) / 1024 / 1024;
 }
 
-bool init()
+uint32 getFreeMem()
 {
-    stream     = NULL;
-    d_ref      = NULL;
-    d_qry      = NULL;
-    ref_height = ref_width = qry_height = qry_width = 0;
-    ct_num                                          = 0;
-    pitchref                                        = 0;
-    pitchqry                                        = 0;
-    return true;
+    size_t free, total;
+    cudaMemGetInfo(&free, &total);
+    return free / 1024 / 1024;
+}
+
+bool initGPU(const int gpuid)
+{
+    int devicesCount;
+    cudaGetDeviceCount(&devicesCount);
+    if (gpuid < devicesCount)
+    {
+        cudaDeviceProp deviceProperties;
+        cudaGetDeviceProperties(&deviceProperties, gpuid);
+        if (deviceProperties.major >= 2 && deviceProperties.minor >= 0)
+        {
+            shared_mem_per_block = deviceProperties.sharedMemPerBlock;
+            cudaSetDevice(gpuid);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool destroy()
@@ -175,6 +190,19 @@ bool copyin_score(InputData& rawdata)
     qry_width  = rawdata.qry_width;
     ct_num     = rawdata.ct_num;
 
+    size_t estimated_mem = 0;
+    estimated_mem += (size_t(ref_height)*ref_width+size_t(qry_height)*qry_width)*(sizeof(uint16)+sizeof(float));
+    estimated_mem += qry_width*(sizeof(uint16)+sizeof(uint32));
+    estimated_mem += ref_height*(sizeof(uint32)+1024*sizeof(float));
+    estimated_mem /= 1024*1024;
+    estimated_mem += 255;   // system memory
+    auto free_mem = getFreeMem();
+    if ((estimated_mem+500) > free_mem)
+    {
+        cerr<<"Need gpu memory(MB): "<<estimated_mem+500<<" less than free memory(MB): "<<free_mem<<endl;
+        return false;
+    }
+
     CHECK(cudaMalloc(( void** )&d_ref, rawdata.ref.size() * sizeof(uint16)));
     CHECK(cudaMemcpy(d_ref, rawdata.ref.data(), rawdata.ref.size() * sizeof(uint16),
                      cudaMemcpyHostToDevice));
@@ -193,13 +221,12 @@ bool copyin_score(InputData& rawdata)
     CHECK(cudaMalloc(( void** )&d_qry_rank, rawdata.qry.size() * sizeof(float)));
     CHECK(cudaMalloc(( void** )&d_score, 1024 * ref_height * sizeof(float)));
 
-    std::cout << "score() used gpu mem(MB): " << getUsedMem() << std::endl;
+    std::cout << "score() used gpu mem(MB): " << estimated_mem << std::endl;
 
     return true;
 }
 
-bool copyin(InputData& rawdata, vector<uint32>& ctidx, vector<uint32>& ctdiff,
-            vector<uint32>& ctdidx, vector<uint16>& ref, vector<uint16>& qry)
+bool copyin(InputData& rawdata)
 {
     ref_height = rawdata.ref_height;
     ref_width  = rawdata.ref_width;
@@ -207,25 +234,39 @@ bool copyin(InputData& rawdata, vector<uint32>& ctidx, vector<uint32>& ctdiff,
     qry_width  = rawdata.qry_width;
     ct_num     = rawdata.ct_num;
 
+    size_t estimated_mem = 0;
+    estimated_mem += (size_t(ref_height)*ref_width+size_t(qry_height)*qry_width)*sizeof(uint16);
+    estimated_mem += qry_width*(sizeof(uint16)+sizeof(uint32)+sizeof(float));
+    estimated_mem += ref_height*(sizeof(uint32)+sizeof(float));
+    estimated_mem += size_t(ref_height)*ref_width*(sizeof(uint16)+sizeof(float));
+    estimated_mem /= 1024*1024;
+    estimated_mem += 255;   // system memory
+    auto free_mem = getFreeMem();
+    if ((estimated_mem+500) > free_mem)
+    {
+        cerr<<"Need gpu memory(MB): "<<estimated_mem+500<<" less than free memory(MB): "<<free_mem<<endl;
+        return false;
+    }
+
     CHECK(cudaStreamCreate(&stream));
     CHECK(cudaMallocPitch(( void** )&d_ref, &pitchref, ref_width * sizeof(uint16),
                           ref_height));
     CHECK(cudaMallocPitch(( void** )&d_qry, &pitchqry, qry_width * sizeof(uint16),
                           qry_height));
 
-    CHECK(cudaMemcpy2DAsync(d_ref, pitchref, ref.data(), ref_width * sizeof(uint16),
+    CHECK(cudaMemcpy2DAsync(d_ref, pitchref, rawdata.ref.data(), ref_width * sizeof(uint16),
                             ref_width * sizeof(uint16), ref_height,
                             cudaMemcpyHostToDevice, stream));
-    CHECK(cudaMemcpy2DAsync(d_qry, pitchqry, qry.data(), qry_width * sizeof(uint16),
+    CHECK(cudaMemcpy2DAsync(d_qry, pitchqry, rawdata.qry.data(), qry_width * sizeof(uint16),
                             qry_width * sizeof(uint16), qry_height,
                             cudaMemcpyHostToDevice, stream));
 
     h_labels = rawdata.labels;
 
-    h_ctidx = ctidx;
+    h_ctidx = rawdata.ctidx;
 
-    h_ctdiff = ctdiff;
-    h_ctdidx = ctdidx;
+    h_ctdiff = rawdata.ctdiff;
+    h_ctdidx = rawdata.ctdidx;
 
     cudaStreamSynchronize(stream);
 
@@ -234,11 +275,11 @@ bool copyin(InputData& rawdata, vector<uint32>& ctidx, vector<uint32>& ctdiff,
     CHECK(cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16)));
     CHECK(cudaMalloc(( void** )&d_qry_rank, qry_width * sizeof(float)));
 
-    CHECK(cudaMalloc(( void** )&d_ref_lines, ref.size() * sizeof(uint16)));
-    CHECK(cudaMalloc(( void** )&d_ref_rank, ref.size() * sizeof(float)));
+    CHECK(cudaMalloc(( void** )&d_ref_lines, rawdata.ref.size() * sizeof(uint16)));
+    CHECK(cudaMalloc(( void** )&d_ref_rank, rawdata.ref.size() * sizeof(float)));
     CHECK(cudaMalloc(( void** )&d_score, ref_height * sizeof(float)));
 
-    std::cout << "finetune() used gpu mem(MB): " << getUsedMem() << std::endl;
+    std::cout << "finetune() used gpu mem(MB): " << estimated_mem << std::endl;
 
     return true;
 }
@@ -698,13 +739,13 @@ float percentile(vector<float> arr, int len, float p)
     return res;
 }
 
-bool bincount(const uint64 max_uniq_gene)
+inline bool bincount(const uint64 max_uniq_gene)
 {
     // TODO: Get total amount of shared memory per block from device
-    return max_uniq_gene <= 1024;
+    return max_uniq_gene <= min(1024, shared_mem_per_block/8);
 }
 
-vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene)
+vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
 {
     if (bincount(max_uniq_gene))
     {
@@ -732,12 +773,12 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene)
     // get all qry rank and calculate score
     vector<int> first_labels(rawdata.labels.size() / rawdata.ct_num, 0);
     auto task = [&](vector<float>& score, int thread_id, int width, vector<uint32>& idx,
-                    int ct_num, vector<int>& res)
+                    int ct_num, int step_size, vector<int>& res)
     {
         int height = score.size() / width;
-        for (int i = 0; i < 64; ++i)
+        for (int i = 0; i < step_size; ++i)
         {
-            int line = thread_id * 64 + i;
+            int line = thread_id * step_size + i;
             if (line >= height)
                 break;
             int           start     = line * width;
@@ -770,6 +811,10 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene)
         }
     };
 
+    // Get suitable thread number
+    while (1024 % cores != 0)
+        cores--;
+    cores = min(cores, 8);
     for (int line = 0; line < qry_height; line += 1024)
     {
         spearman<<<ref_height, 1024>>>(d_qry_rank, line, d_ref_rank, qry_width,
@@ -786,9 +831,9 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene)
         h_labels.resize(1024 * ct_num, 0);
 
         vector<thread> threads;
-        for (int i = 0; i < 16; ++i)
+        for (int i = 0; i < cores; ++i)
         {
-            thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx), ct_num,
+            thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx), ct_num, 1024 / cores,
                       std::ref(h_labels));
             threads.push_back(std::move(th));
         }
