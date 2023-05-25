@@ -771,9 +771,9 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
     }
 
     // get all qry rank and calculate score
-    vector<int> first_labels(rawdata.labels.size() / rawdata.ct_num, 0);
+    vector<int> first_labels;
     auto task = [&](vector<float>& score, int thread_id, int width, vector<uint32>& idx,
-                    int ct_num, int step_size, vector<int>& res)
+                    int ct_num, int step_size, vector<int>& res, vector<int>& first_labels)
     {
         int height = score.size() / width;
         for (int i = 0; i < step_size; ++i)
@@ -816,10 +816,9 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
         cores--;
     cores = min(cores, 8);
 
-    vector<float> h_score;
-    h_score.resize(1024 * ref_height, 0);
-    vector<int> h_labels;
-    h_labels.resize(1024 * ct_num, 0);
+    vector<float> h_score(1024 * ref_height, 0);
+    vector<int> h_labels(1024 * ct_num, 0);
+    vector<int> h_first_labels(1024, 0);
     int line = 0;
     for (; line < qry_height; line += 1024)
     {
@@ -833,37 +832,35 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
             for (int i = 0; i < cores; ++i)
             {
                 thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx), ct_num, 1024 / cores,
-                        std::ref(h_labels));
+                        std::ref(h_labels), std::ref(h_first_labels));
                 threads.push_back(std::move(th));
             }
             for (auto& th : threads)
             {
                 th.join();
             }
-            for (int i = 0; i < h_labels.size(); ++i)
-                if (((line-1024) * ct_num + i) < qry_height * ct_num)
-                    rawdata.labels[(line-1024) * ct_num + i] = h_labels[i];
+            rawdata.labels.insert(rawdata.labels.end(), h_labels.begin(), h_labels.end());
+            first_labels.insert(first_labels.end(), h_first_labels.begin(), h_first_labels.end());
         }
         CHECK(cudaMemcpy(h_score.data(), d_score, 1024 * ref_height * sizeof(float),
                          cudaMemcpyDeviceToHost));
-
-        
     }
     vector<thread> threads;
     for (int i = 0; i < cores; ++i)
     {
         thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx), ct_num, 1024 / cores,
-                    std::ref(h_labels));
+                    std::ref(h_labels), std::ref(h_first_labels));
         threads.push_back(std::move(th));
     }
     for (auto& th : threads)
     {
         th.join();
     }
-    line = max(0, line-1024);   // incase the qry height less than 1024
-    for (int i = 0; i < h_labels.size(); ++i)
-        if ((line * ct_num + i) < qry_height * ct_num)
-            rawdata.labels[line * ct_num + i] = h_labels[i];
+    rawdata.labels.insert(rawdata.labels.end(), h_labels.begin(), h_labels.end());
+    first_labels.insert(first_labels.end(), h_first_labels.begin(), h_first_labels.end());
+
+    rawdata.labels.resize(qry_height * ct_num, 0);
+    first_labels.resize(qry_height, 0);
 
     return first_labels;
 }
@@ -887,6 +884,8 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,
             uniq_genes.insert(h_ctdiff.begin() + pos, h_ctdiff.begin() + pos + len);
         }
     }
+    if (uniq_genes.size() < 20)
+        return {top_labels.front()};
 
     vector<uint32> h_gene_idx(uniq_genes.begin(), uniq_genes.end());
 

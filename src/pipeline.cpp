@@ -53,7 +53,6 @@ bool Pipeline::score()
     cout << "max uniq gene: " << max_uniq_gene << endl;
     auto& raw_data = data_parser->raw_data;
     raw_data.labels.clear();
-    raw_data.labels.resize(raw_data.ct_num * raw_data.qry_height, 0);
 
     cells = raw_data.qry_cellnames;
 
