@@ -26,7 +26,7 @@ struct InputData
     vector<char*>  qry_cellnames;
 
     vector<float> labels;     // initial annotated cell types, cell x celltype
-    vector<char*> celltypes;  // celltypes order
+    vector<string> celltypes;  // celltypes order
     int           ct_num;     // count of unique celltypes
 
     vector<uint32> ctdiff;  // gene index of between two cell types in ref data

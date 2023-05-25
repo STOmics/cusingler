@@ -13,6 +13,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <string.h>
 #include <vector>
 using namespace std;
 
@@ -46,11 +47,37 @@ bool DataParser::loadRefMatrix()
         auto group(file->openGroup("/X"));
 
         Attribute      attr(group.openAttribute("shape"));
-        auto           datatype = attr.getDataType();
-        vector<uint64> shapes(2, 0);
-        attr.read(datatype, shapes.data());
-        ref_height = shapes[0];
-        ref_width  = shapes[1];
+        auto           datatype = attr.getIntType();
+        size_t byteSize = datatype.getSize();
+        if (byteSize == 1)
+        {
+            vector<uint8> shapes(2, 0);
+            attr.read(datatype, shapes.data());
+            ref_height = shapes[0];
+            ref_width  = shapes[1];
+        }
+        else if (byteSize == 2)
+        {
+            vector<uint16> shapes(2, 0);
+            attr.read(datatype, shapes.data());
+            ref_height = shapes[0];
+            ref_width  = shapes[1];
+        }
+        else if (byteSize == 4)
+        {
+            vector<uint32> shapes(2, 0);
+            attr.read(datatype, shapes.data());
+            ref_height = shapes[0];
+            ref_width  = shapes[1];
+        }
+        else if (byteSize == 8)
+        {
+            vector<uint64> shapes(2, 0);
+            attr.read(datatype, shapes.data());
+            ref_height = shapes[0];
+            ref_width  = shapes[1];
+        }
+
         cout << "Ref shape: " << ref_height << " x " << ref_width << endl;
 
         ref_data    = getDataset<float>(group, "data");
@@ -60,11 +87,53 @@ bool DataParser::loadRefMatrix()
 
     // Load celltypes of per cell
     {
-        auto group(file->openGroup("/obs/ClusterName"));
+        bool is_dataset = false;
+        Group group;
+        if (file->nameExists("/obs/celltype"))
+        {
+            group = file->openGroup("/obs/celltype");
+        }
+        else if (file->nameExists("/obs/ClusterName"))
+        {
+            group = file->openGroup("/obs/ClusterName");
+        }
+        else if (file->nameExists("/obsm/annotation_au/celltype"))
+        {
+            is_dataset = true;
 
-        celltype_codes = getDataset<uint8>(group, "codes");
-        uniq_celltypes = getDataset<char*>(group, "categories");
-        label_num      = uniq_celltypes.size();
+            group = file->openGroup("/obsm/annotation_au");
+            auto temp = getDataset<char*>(group, "celltype");
+            map<string, uint8> m;
+            for (auto s : temp)
+            {
+                if (m.count(s) == 0)
+                {
+                    m[s] = m.size();
+                }
+            }
+            for (auto& s : temp)
+            {
+                celltype_codes.push_back(m[s]);
+            }
+            for (auto [s,_] : m)
+            {
+                char* t = strdup(s.data());
+                uniq_celltypes.push_back(t);
+            }
+            label_num = uniq_celltypes.size();
+        }
+        else
+        {
+            cerr<<"Fail to load celltypes of reference file."<<endl;
+            exit(-1);
+        }
+
+        if (!is_dataset)
+        {
+            celltype_codes = getDataset<uint8>(group, "codes");
+            uniq_celltypes = getDataset<char*>(group, "categories");
+            label_num      = uniq_celltypes.size();
+        }
     }
 
     // clear resources
@@ -412,11 +481,37 @@ bool DataParser::loadQryMatrix()
         auto group(file->openGroup("/X"));
 
         Attribute      attr(group.openAttribute("shape"));
-        auto           datatype = attr.getDataType();
-        vector<uint64> shapes(2, 0);
-        attr.read(datatype, shapes.data());
-        qry_height = shapes[0];
-        qry_width  = shapes[1];
+        auto           datatype = attr.getIntType();
+        size_t byteSize = datatype.getSize();
+        if (byteSize == 1)
+        {
+            vector<uint8> shapes(2, 0);
+            attr.read(datatype, shapes.data());
+            qry_height = shapes[0];
+            qry_width  = shapes[1];
+        }
+        else if (byteSize == 2)
+        {
+            vector<uint16> shapes(2, 0);
+            attr.read(datatype, shapes.data());
+            qry_height = shapes[0];
+            qry_width  = shapes[1];
+        }
+        else if (byteSize == 4)
+        {
+            vector<uint32> shapes(2, 0);
+            attr.read(datatype, shapes.data());
+            qry_height = shapes[0];
+            qry_width  = shapes[1];
+        }
+        else if (byteSize == 8)
+        {
+            vector<uint64> shapes(2, 0);
+            attr.read(datatype, shapes.data());
+            qry_height = shapes[0];
+            qry_width  = shapes[1];
+        }
+        
         cout << "Qry shape: " << qry_height << " x " << qry_width << endl;
 
         qry_data    = getDataset<float>(group, "data");
@@ -471,7 +566,8 @@ bool DataParser::preprocess()
 
     raw_data.ct_num = uniq_celltypes.size();
 
-    raw_data.celltypes = uniq_celltypes;
+    for (auto s : uniq_celltypes)
+        raw_data.celltypes.push_back(string(s));
 
     raw_data.qry_cellnames = qry_cellnames;
 
