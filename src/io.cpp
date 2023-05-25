@@ -324,40 +324,63 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
     int height = indptr.size() - 1;
     res.clear();
     res.resize(( size_t )( width )*height, 0);
-
-    size_t line = 0;
-    for (int i = 0; i < height; ++i)
+    std::mutex stat_mutex;
+    auto task = [&](int line_start, int line_end)
     {
-        auto start = indptr[i];
-        auto end   = indptr[i + 1];
-
-        set<float> uniq;
-        for (uint32 i = start; i < end; ++i)
+        uint64 curr_uniq_gene = 0;
+        for (int line = line_start; line < line_end; ++line)
         {
-            auto raw_index = indices[i];
-            if (index_map.count(raw_index) != 0)
+            auto start = indptr[line];
+            auto end   = indptr[line + 1];
+
+            set<float> uniq;
+            for (uint32 i = start; i < end; ++i)
             {
-                uniq.insert(data[i]);
+                auto raw_index = indices[i];
+                if (index_map.count(raw_index) != 0)
+                {
+                    uniq.insert(data[i]);
+                }
+            }
+
+            curr_uniq_gene = max(uniq.size() + 1, curr_uniq_gene);
+
+            vector<float>                order(uniq.begin(), uniq.end());
+            unordered_map<float, uint16> index;
+            for (uint16 j = 0; j < order.size(); ++j)
+            {
+                // There is not exists 0 in csr format, so start from 1
+                index[order[j]] = j + 1;
+            }
+
+            for (uint32 i = start; i < end; ++i)
+            {
+                auto raw_index = indices[i];
+                if (index_map.count(raw_index) != 0)
+                {
+                    res[line * width + index_map[raw_index]] = index[data[i]];
+                }
             }
         }
-        max_uniq_gene = max(uniq.size() + 1, max_uniq_gene);
-        vector<float>                order(uniq.begin(), uniq.end());
-        unordered_map<float, uint16> index;
-        for (uint16 j = 0; j < order.size(); ++j)
-        {
-            // There is not exists 0 in csr format, so start from 1
-            index[order[j]] = j + 1;
-        }
 
-        for (uint32 i = start; i < end; ++i)
-        {
-            auto raw_index = indices[i];
-            if (index_map.count(raw_index) != 0)
-            {
-                res[line * width + index_map[raw_index]] = index[data[i]];
-            }
-        }
-        line++;
+        std::lock_guard<std::mutex> lg(stat_mutex);
+        max_uniq_gene = max(curr_uniq_gene, max_uniq_gene);
+    };
+
+    vector< thread > threads;
+    int           step  = height / thread_num;
+    if ((height % thread_num) != 0)
+        step++;
+    for (int i = 0; i < thread_num; ++i)
+    {
+        int start = i * step;
+        int end  = min((i+1)*step, height);
+        thread th(task, start, end);
+        threads.push_back(std::move(th));
+    }
+    for (auto& th : threads)
+    {
+        th.join();
     }
 
     return true;
