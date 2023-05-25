@@ -815,37 +815,55 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
     while (1024 % cores != 0)
         cores--;
     cores = min(cores, 8);
-    for (int line = 0; line < qry_height; line += 1024)
+
+    vector<float> h_score;
+    h_score.resize(1024 * ref_height, 0);
+    vector<int> h_labels;
+    h_labels.resize(1024 * ct_num, 0);
+    int line = 0;
+    for (; line < qry_height; line += 1024)
     {
         spearman<<<ref_height, 1024>>>(d_qry_rank, line, d_ref_rank, qry_width,
                                        qry_height, ref_height, d_score);
         CHECK(cudaGetLastError());
-
-        vector<float> h_score;
-        h_score.resize(1024 * ref_height, 0);
-
+        // asynchronous execution between GPU and CPU
+        if (line != 0)
+        {
+            vector<thread> threads;
+            for (int i = 0; i < cores; ++i)
+            {
+                thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx), ct_num, 1024 / cores,
+                        std::ref(h_labels));
+                threads.push_back(std::move(th));
+            }
+            for (auto& th : threads)
+            {
+                th.join();
+            }
+            for (int i = 0; i < h_labels.size(); ++i)
+                if (((line-1024) * ct_num + i) < qry_height * ct_num)
+                    rawdata.labels[(line-1024) * ct_num + i] = h_labels[i];
+        }
         CHECK(cudaMemcpy(h_score.data(), d_score, 1024 * ref_height * sizeof(float),
                          cudaMemcpyDeviceToHost));
 
-        vector<int> h_labels;
-        h_labels.resize(1024 * ct_num, 0);
-
-        vector<thread> threads;
-        for (int i = 0; i < cores; ++i)
-        {
-            thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx), ct_num, 1024 / cores,
-                      std::ref(h_labels));
-            threads.push_back(std::move(th));
-        }
-        for (auto& th : threads)
-        {
-            th.join();
-        }
-
-        for (int i = 0; i < h_labels.size(); ++i)
-            if ((line * ct_num + i) < qry_height * ct_num)
-                rawdata.labels[line * ct_num + i] = h_labels[i];
+        
     }
+    vector<thread> threads;
+    for (int i = 0; i < cores; ++i)
+    {
+        thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx), ct_num, 1024 / cores,
+                    std::ref(h_labels));
+        threads.push_back(std::move(th));
+    }
+    for (auto& th : threads)
+    {
+        th.join();
+    }
+    line = max(0, line-1024);   // incase the qry height less than 1024
+    for (int i = 0; i < h_labels.size(); ++i)
+        if ((line * ct_num + i) < qry_height * ct_num)
+            rawdata.labels[line * ct_num + i] = h_labels[i];
 
     return first_labels;
 }
