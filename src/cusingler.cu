@@ -191,15 +191,17 @@ bool copyin_score(InputData& rawdata)
     ct_num     = rawdata.ct_num;
 
     size_t estimated_mem = 0;
-    estimated_mem += (size_t(ref_height)*ref_width+size_t(qry_height)*qry_width)*(sizeof(uint16)+sizeof(float));
-    estimated_mem += qry_width*(sizeof(uint16)+sizeof(uint32));
-    estimated_mem += ref_height*(sizeof(uint32)+1024*sizeof(float));
-    estimated_mem /= 1024*1024;
-    estimated_mem += 255;   // system memory
+    estimated_mem += (size_t(ref_height) * ref_width + size_t(qry_height) * qry_width)
+                     * (sizeof(uint16) + sizeof(float));
+    estimated_mem += qry_width * (sizeof(uint16) + sizeof(uint32));
+    estimated_mem += ref_height * (sizeof(uint32) + 1024 * sizeof(float));
+    estimated_mem /= 1024 * 1024;
+    estimated_mem += 255;  // system memory
     auto free_mem = getFreeMem();
-    if ((estimated_mem+500) > free_mem)
+    if ((estimated_mem + 500) > free_mem)
     {
-        cerr<<"Need gpu memory(MB): "<<estimated_mem+500<<" less than free memory(MB): "<<free_mem<<endl;
+        cerr << "Need gpu memory(MB): " << estimated_mem + 500
+             << " less than free memory(MB): " << free_mem << endl;
         return false;
     }
 
@@ -235,16 +237,18 @@ bool copyin(InputData& rawdata)
     ct_num     = rawdata.ct_num;
 
     size_t estimated_mem = 0;
-    estimated_mem += (size_t(ref_height)*ref_width+size_t(qry_height)*qry_width)*sizeof(uint16);
-    estimated_mem += qry_width*(sizeof(uint16)+sizeof(uint32)+sizeof(float));
-    estimated_mem += ref_height*(sizeof(uint32)+sizeof(float));
-    estimated_mem += size_t(ref_height)*ref_width*(sizeof(uint16)+sizeof(float));
-    estimated_mem /= 1024*1024;
-    estimated_mem += 255;   // system memory
+    estimated_mem += (size_t(ref_height) * ref_width + size_t(qry_height) * qry_width)
+                     * sizeof(uint16);
+    estimated_mem += qry_width * (sizeof(uint16) + sizeof(uint32) + sizeof(float));
+    estimated_mem += ref_height * (sizeof(uint32) + sizeof(float));
+    estimated_mem += size_t(ref_height) * ref_width * (sizeof(uint16) + sizeof(float));
+    estimated_mem /= 1024 * 1024;
+    estimated_mem += 255;  // system memory
     auto free_mem = getFreeMem();
-    if ((estimated_mem+500) > free_mem)
+    if ((estimated_mem + 500) > free_mem)
     {
-        cerr<<"Need gpu memory(MB): "<<estimated_mem+500<<" less than free memory(MB): "<<free_mem<<endl;
+        cerr << "Need gpu memory(MB): " << estimated_mem + 500
+             << " less than free memory(MB): " << free_mem << endl;
         return false;
     }
 
@@ -254,12 +258,12 @@ bool copyin(InputData& rawdata)
     CHECK(cudaMallocPitch(( void** )&d_qry, &pitchqry, qry_width * sizeof(uint16),
                           qry_height));
 
-    CHECK(cudaMemcpy2DAsync(d_ref, pitchref, rawdata.ref.data(), ref_width * sizeof(uint16),
-                            ref_width * sizeof(uint16), ref_height,
-                            cudaMemcpyHostToDevice, stream));
-    CHECK(cudaMemcpy2DAsync(d_qry, pitchqry, rawdata.qry.data(), qry_width * sizeof(uint16),
-                            qry_width * sizeof(uint16), qry_height,
-                            cudaMemcpyHostToDevice, stream));
+    CHECK(cudaMemcpy2DAsync(d_ref, pitchref, rawdata.ref.data(),
+                            ref_width * sizeof(uint16), ref_width * sizeof(uint16),
+                            ref_height, cudaMemcpyHostToDevice, stream));
+    CHECK(cudaMemcpy2DAsync(d_qry, pitchqry, rawdata.qry.data(),
+                            qry_width * sizeof(uint16), qry_width * sizeof(uint16),
+                            qry_height, cudaMemcpyHostToDevice, stream));
 
     h_labels = rawdata.labels;
 
@@ -742,7 +746,7 @@ float percentile(vector<float> arr, int len, float p)
 inline bool bincount(const uint64 max_uniq_gene)
 {
     // TODO: Get total amount of shared memory per block from device
-    return max_uniq_gene <= min(1024, shared_mem_per_block/8);
+    return max_uniq_gene <= min(1024, shared_mem_per_block / 8);
 }
 
 vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
@@ -773,7 +777,8 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
     // get all qry rank and calculate score
     vector<int> first_labels;
     auto task = [&](vector<float>& score, int thread_id, int width, vector<uint32>& idx,
-                    int ct_num, int step_size, vector<int>& res, vector<int>& first_labels)
+                    int ct_num, int step_size, vector<int>& res,
+                    vector<int>& first_labels)
     {
         int height = score.size() / width;
         for (int i = 0; i < step_size; ++i)
@@ -817,9 +822,9 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
     cores = min(cores, 8);
 
     vector<float> h_score(1024 * ref_height, 0);
-    vector<int> h_labels(1024 * ct_num, 0);
-    vector<int> h_first_labels(1024, 0);
-    int line = 0;
+    vector<int>   h_labels(1024 * ct_num, 0);
+    vector<int>   h_first_labels(1024, 0);
+    int           line = 0;
     for (; line < qry_height; line += 1024)
     {
         spearman<<<ref_height, 1024>>>(d_qry_rank, line, d_ref_rank, qry_width,
@@ -831,8 +836,9 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
             vector<thread> threads;
             for (int i = 0; i < cores; ++i)
             {
-                thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx), ct_num, 1024 / cores,
-                        std::ref(h_labels), std::ref(h_first_labels));
+                thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx),
+                          ct_num, 1024 / cores, std::ref(h_labels),
+                          std::ref(h_first_labels));
                 threads.push_back(std::move(th));
             }
             for (auto& th : threads)
@@ -840,7 +846,8 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
                 th.join();
             }
             rawdata.labels.insert(rawdata.labels.end(), h_labels.begin(), h_labels.end());
-            first_labels.insert(first_labels.end(), h_first_labels.begin(), h_first_labels.end());
+            first_labels.insert(first_labels.end(), h_first_labels.begin(),
+                                h_first_labels.end());
         }
         CHECK(cudaMemcpy(h_score.data(), d_score, 1024 * ref_height * sizeof(float),
                          cudaMemcpyDeviceToHost));
@@ -848,8 +855,8 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
     vector<thread> threads;
     for (int i = 0; i < cores; ++i)
     {
-        thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx), ct_num, 1024 / cores,
-                    std::ref(h_labels), std::ref(h_first_labels));
+        thread th(task, std::ref(h_score), i, ref_height, std::ref(h_ctidx), ct_num,
+                  1024 / cores, std::ref(h_labels), std::ref(h_first_labels));
         threads.push_back(std::move(th));
     }
     for (auto& th : threads)
@@ -885,7 +892,7 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,
         }
     }
     if (uniq_genes.size() < 20)
-        return {top_labels.front()};
+        return { top_labels.front() };
 
     vector<uint32> h_gene_idx(uniq_genes.begin(), uniq_genes.end());
 

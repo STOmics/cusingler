@@ -16,8 +16,10 @@
 #include <thread>
 using namespace std;
 
-Pipeline::Pipeline(string ref_file, string qry_file, string stat_file, int cores, int gpuid)
-    : ref_file(ref_file), qry_file(qry_file), stat_file(stat_file), cores(cores), gpuid(gpuid)
+Pipeline::Pipeline(string ref_file, string qry_file, string stat_file, int cores,
+                   int gpuid)
+    : ref_file(ref_file), qry_file(qry_file), stat_file(stat_file), cores(cores),
+      gpuid(gpuid)
 {
 }
 
@@ -25,7 +27,7 @@ bool Pipeline::train()
 {
     if (!initGPU(gpuid))
     {
-        cerr<<"Fail to initlize gpu with id: "<<gpuid<<endl;
+        cerr << "Fail to initlize gpu with id: " << gpuid << endl;
         exit(-1);
     }
 
@@ -101,7 +103,7 @@ bool Pipeline::dump()
 {
     ofstream ofs(stat_file);
     ofs << "cell\tfirstLabel\tfinalLabel\n";
-    for (int i = 0; i < final_labels.size(); ++i)
+    for (uint32 i = 0; i < final_labels.size(); ++i)
         ofs << cells[i] << "\t" << first_labels[i] << "\t" << final_labels[i] << endl;
     ofs.close();
     return true;

@@ -12,8 +12,8 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
-#include <string>
 #include <string.h>
+#include <string>
 #include <vector>
 using namespace std;
 
@@ -22,12 +22,13 @@ using namespace H5;
 
 template <typename T> vector<T> getDataset(Group& group, string name)
 {
-    auto    dataset   = DataSet(group.openDataSet(name.c_str()));
-    auto    datatype  = dataset.getDataType();
-    auto    dataspace = dataset.getSpace();
-    int     rank      = dataspace.getSimpleExtentNdims();
-    hsize_t dims[rank];
-    dataspace.getSimpleExtentDims(dims, NULL);
+    auto dataset   = DataSet(group.openDataSet(name.c_str()));
+    auto datatype  = dataset.getDataType();
+    auto dataspace = dataset.getSpace();
+    int  rank      = dataspace.getSimpleExtentNdims();
+    // hsize_t dims[rank];
+    vector<hsize_t> dims(rank);
+    dataspace.getSimpleExtentDims(&dims[0], NULL);
 
     uint64    size = dims[0];
     vector<T> data;
@@ -46,9 +47,9 @@ bool DataParser::loadRefMatrix()
     {
         auto group(file->openGroup("/X"));
 
-        Attribute      attr(group.openAttribute("shape"));
-        auto           datatype = attr.getIntType();
-        size_t byteSize = datatype.getSize();
+        Attribute attr(group.openAttribute("shape"));
+        auto      datatype = attr.getIntType();
+        size_t    byteSize = datatype.getSize();
         if (byteSize == 1)
         {
             vector<uint8> shapes(2, 0);
@@ -87,7 +88,7 @@ bool DataParser::loadRefMatrix()
 
     // Load celltypes of per cell
     {
-        bool is_dataset = false;
+        bool  is_dataset = false;
         Group group;
         if (file->nameExists("/obs/celltype"))
         {
@@ -101,8 +102,8 @@ bool DataParser::loadRefMatrix()
         {
             is_dataset = true;
 
-            group = file->openGroup("/obsm/annotation_au");
-            auto temp = getDataset<char*>(group, "celltype");
+            group                   = file->openGroup("/obsm/annotation_au");
+            auto               temp = getDataset<char*>(group, "celltype");
             map<string, uint8> m;
             for (auto s : temp)
             {
@@ -115,7 +116,7 @@ bool DataParser::loadRefMatrix()
             {
                 celltype_codes.push_back(m[s]);
             }
-            for (auto [s,_] : m)
+            for (auto [s, _] : m)
             {
                 char* t = strdup(s.data());
                 uniq_celltypes.push_back(t);
@@ -124,7 +125,7 @@ bool DataParser::loadRefMatrix()
         }
         else
         {
-            cerr<<"Fail to load celltypes of reference file."<<endl;
+            cerr << "Fail to load celltypes of reference file." << endl;
             exit(-1);
         }
 
@@ -144,7 +145,8 @@ bool DataParser::loadRefMatrix()
 
 bool DataParser::trainData()
 {
-    auto task = [](vector<vector<float>>& matrix, const int start, const int end, const int len, vector<float>& res)
+    auto task = [](vector<vector<float>>& matrix, const int start, const int end,
+                   const int len, vector<float>& res)
     {
         for (int i = start; i < end; ++i)
         {
@@ -159,7 +161,7 @@ bool DataParser::trainData()
             else
             {
                 std::nth_element(cols.begin(), cols.begin() + cols.size() / 2,
-                                    cols.end());
+                                 cols.end());
                 median = cols[cols.size() / 2];
             }
             res[i] = median;
@@ -171,7 +173,7 @@ bool DataParser::trainData()
     if ((ref_width % thread_num) != 0)
         step++;
     map<uint8, vector<float>> median_map;
-    for (int i = 0; i < ref_ctidx.size(); i += 2)
+    for (uint32 i = 0; i < ref_ctidx.size(); i += 2)
     {
         int  ct  = i / 2;
         auto pos = ref_ctidx[i];
@@ -179,23 +181,23 @@ bool DataParser::trainData()
 
         // Collect sub 2d-array
         vector<vector<float>> sub_ref(ref_width);
-        for (int idx = pos; idx < pos + len; ++idx)
+        for (uint32 idx = pos; idx < pos + len; ++idx)
         {
             auto start = ref_indptr[idx];
             auto end   = ref_indptr[idx + 1];
-            for (uint32 i = start; i < end; ++i)
+            for (int i = start; i < end; ++i)
             {
                 sub_ref[ref_indices[i]].push_back(ref_data[i]);
             }
         }
 
         // Calculating median value using multi-threading
-        vector<float> median(ref_width, 0);
+        vector<float>  median(ref_width, 0);
         vector<thread> threads;
         for (int i = 0; i < thread_num; ++i)
         {
-            int start = i * step;
-            int end = min((i+1)*step, ref_width);
+            int    start = i * step;
+            int    end   = min((i + 1) * step, ref_width);
             thread th(task, std::ref(sub_ref), start, end, len, std::ref(median));
             threads.push_back(std::move(th));
         }
@@ -226,7 +228,7 @@ bool DataParser::trainData()
             }
             // Get diff of two array
             vector<pair<int, uint32>> diff;
-            for (int i = 0; i < ref_width; ++i)
+            for (uint32 i = 0; i < ref_width; ++i)
             {
                 diff.push_back({ int(round((v1[i] - v2[i]) * 1e6)), ref_width - i - 1 });
             }
@@ -235,7 +237,7 @@ bool DataParser::trainData()
             std::sort(diff.begin(), diff.end(), std::greater<pair<int, uint32>>());
 
             // Only need the score > 0
-            int i = 0;
+            uint32 i = 0;
             for (; i < diff.size(); ++i)
             {
                 if (diff[i].first <= 0)
@@ -250,7 +252,7 @@ bool DataParser::trainData()
             ref_train_idxs.push_back(i);
             idx_start += i;
             // Collect common genes in top N
-            for (int i = 0; i < common_gene_n; ++i)
+            for (uint32 i = 0; i < common_gene_n; ++i)
             {
                 common_genes.insert(ref_width - diff[i].second - 1);
             }
@@ -315,13 +317,13 @@ bool DataParser::findIntersectionGenes()
         }
         filter_genes  = true;
         int new_index = 0;
-        for (int i = 0; i < ref_genes.size(); ++i)
+        for (uint32 i = 0; i < ref_genes.size(); ++i)
         {
             if (common_uniq_genes.count(ref_genes[i]) != 0)
                 ref_gene_index.insert({ i, new_index++ });
         }
         new_index = 0;
-        for (int i = 0; i < qry_genes.size(); ++i)
+        for (uint32 i = 0; i < qry_genes.size(); ++i)
         {
             if (common_uniq_genes.count(qry_genes[i]) != 0)
                 qry_gene_index.insert({ i, new_index++ });
@@ -368,7 +370,7 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
     {
         auto start = indptr[i];
         auto end   = indptr[i + 1];
-        for (uint32 i = start; i < end; ++i)
+        for (int i = start; i < end; ++i)
         {
             res[line * width + indices[i]] = data[i];
         }
@@ -394,7 +396,7 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
     res.clear();
     res.resize(( size_t )( width )*height, 0);
     std::mutex stat_mutex;
-    auto task = [&](int line_start, int line_end)
+    auto       task = [&](int line_start, int line_end)
     {
         uint64 curr_uniq_gene = 0;
         for (int line = line_start; line < line_end; ++line)
@@ -403,7 +405,7 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
             auto end   = indptr[line + 1];
 
             set<float> uniq;
-            for (uint32 i = start; i < end; ++i)
+            for (int i = start; i < end; ++i)
             {
                 auto raw_index = indices[i];
                 if (index_map.count(raw_index) != 0)
@@ -422,7 +424,7 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
                 index[order[j]] = j + 1;
             }
 
-            for (uint32 i = start; i < end; ++i)
+            for (int i = start; i < end; ++i)
             {
                 auto raw_index = indices[i];
                 if (index_map.count(raw_index) != 0)
@@ -436,14 +438,14 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
         max_uniq_gene = max(curr_uniq_gene, max_uniq_gene);
     };
 
-    vector< thread > threads;
-    int           step  = height / thread_num;
+    vector<thread> threads;
+    int            step = height / thread_num;
     if ((height % thread_num) != 0)
         step++;
     for (int i = 0; i < thread_num; ++i)
     {
-        int start = i * step;
-        int end  = min((i+1)*step, height);
+        int    start = i * step;
+        int    end   = min((i + 1) * step, height);
         thread th(task, start, end);
         threads.push_back(std::move(th));
     }
@@ -480,9 +482,9 @@ bool DataParser::loadQryMatrix()
     {
         auto group(file->openGroup("/X"));
 
-        Attribute      attr(group.openAttribute("shape"));
-        auto           datatype = attr.getIntType();
-        size_t byteSize = datatype.getSize();
+        Attribute attr(group.openAttribute("shape"));
+        auto      datatype = attr.getIntType();
+        size_t    byteSize = datatype.getSize();
         if (byteSize == 1)
         {
             vector<uint8> shapes(2, 0);
@@ -511,7 +513,7 @@ bool DataParser::loadQryMatrix()
             qry_height = shapes[0];
             qry_width  = shapes[1];
         }
-        
+
         cout << "Qry shape: " << qry_height << " x " << qry_width << endl;
 
         qry_data    = getDataset<float>(group, "data");
@@ -581,11 +583,11 @@ void DataParser::resort()
     vector<int>   _indptr{ 0 };
     vector<float> _data;
 
-    for (int i = 0; i < ref_ctidx.size(); i += 2)
+    for (uint32 i = 0; i < ref_ctidx.size(); i += 2)
     {
         auto pos = ref_ctidx[i];
         auto len = ref_ctidx[i + 1];
-        for (int j = pos; j < pos + len; j++)
+        for (uint32 j = pos; j < pos + len; j++)
         {
             auto line_num = ref_ctids[j];
             auto start    = ref_indptr[line_num];
@@ -612,7 +614,7 @@ void DataParser::removeCols(vector<float>& data, vector<int>& indptr,
     vector<int>   _indptr{ 0 };
     vector<float> _data;
 
-    for (int j = 0; j < indptr.size() - 1; j++)
+    for (uint32 j = 0; j < indptr.size() - 1; j++)
     {
         auto start = indptr[j];
         auto end   = indptr[j + 1];
@@ -655,7 +657,7 @@ bool DataParser::generateDenseMatrix(int step, uint64& max_uniq_gene)
         raw_data.ctdidx.clear();
         raw_data.ctdiff.clear();
         size_t start = 0;
-        for (int i = 0; i < ref_train_idxs.size(); i += 2)
+        for (uint32 i = 0; i < ref_train_idxs.size(); i += 2)
         {
             auto pos = ref_train_idxs[i];
             auto len = ref_train_idxs[i + 1];
@@ -665,7 +667,7 @@ bool DataParser::generateDenseMatrix(int step, uint64& max_uniq_gene)
                 raw_data.ctdidx.push_back(0);
                 continue;
             }
-            for (int j = pos; j < pos + len; ++j)
+            for (uint32 j = pos; j < pos + len; ++j)
             {
                 if (gene_set.count(ref_train_values[j]) == 0)
                     continue;

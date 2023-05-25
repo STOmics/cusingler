@@ -30,8 +30,8 @@ private:
     string ref_file;
     string qry_file;
     string stat_file;
-    int cores;
-    int gpuid;
+    int    cores;
+    int    gpuid;
 
     // Manage input data
     DataParser* data_parser;

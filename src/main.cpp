@@ -26,13 +26,19 @@ int main(int argc, char** argv)
 
     // Required parameters
     string ref_h5, qry_h5, stat_file;
-    app.add_option("-r,--ref", ref_h5, "Reference h5 file")->check(CLI::ExistingFile)->required();
-    app.add_option("-q,--qry", qry_h5, "Query h5 file")->check(CLI::ExistingFile)->required();
-    app.add_option("-o,--out", stat_file, "Output stat file, seperated by tab")->required();
+    app.add_option("-r,--ref", ref_h5, "Reference h5 file")
+        ->check(CLI::ExistingFile)
+        ->required();
+    app.add_option("-q,--qry", qry_h5, "Query h5 file")
+        ->check(CLI::ExistingFile)
+        ->required();
+    app.add_option("-o,--out", stat_file, "Output stat file, seperated by tab")
+        ->required();
 
     // Optional parameters
     int cores = std::thread::hardware_concurrency();
-    app.add_option("-c", cores, "CPU core number, default detect")->check(CLI::PositiveNumber);
+    app.add_option("-c", cores, "CPU core number, default detect")
+        ->check(CLI::PositiveNumber);
     int gpuid = 0;
     app.add_option("-g", gpuid, "Set gpu id, default 0")->check(CLI::NonNegativeNumber);
 

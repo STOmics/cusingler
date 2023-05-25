@@ -59,11 +59,10 @@ public:
     }
 
 private:
+    std::string                                    unit;
+    std::chrono::high_resolution_clock::time_point start_time;
+
     typedef std::chrono::high_resolution_clock clock;
     typedef std::chrono::microseconds          mics_duration;
-
-    clock::time_point start_time;
-
-    std::string  unit;
-    unsigned int div;
+    unsigned int                               div;
 };
