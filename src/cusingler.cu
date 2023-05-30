@@ -17,7 +17,11 @@
 #include "math_constants.h"
 
 cudaStream_t   stream;
+// csr data format
 uint16 *       d_ref, *d_qry;
+uint16 *       d_ref_data, *d_qry_data;
+int * d_ref_indptr, *d_qry_indptr, *d_ref_indices, *d_qry_indices;
+
 vector<float>  h_labels;
 uint32         ref_height, ref_width, qry_height, qry_width;
 uint32         ct_num;
@@ -79,8 +83,14 @@ bool initGPU(const int gpuid)
 
 bool destroy()
 {
-    cudaFree(d_ref);
-    cudaFree(d_qry);
+    // cudaFree(d_ref);
+    // cudaFree(d_qry);
+    cudaFree(d_ref_data);
+    cudaFree(d_ref_indptr);
+    cudaFree(d_ref_indices);
+    cudaFree(d_qry_data);
+    cudaFree(d_qry_indptr);
+    cudaFree(d_qry_indices);
 
     cudaFree(d_gene_idx);
     cudaFree(d_cell_idx);
@@ -97,8 +107,14 @@ bool destroy()
 
 bool destroy_score()
 {
-    cudaFree(d_ref);
-    cudaFree(d_qry);
+    // cudaFree(d_ref);
+    // cudaFree(d_qry);
+    cudaFree(d_ref_data);
+    cudaFree(d_ref_indptr);
+    cudaFree(d_ref_indices);
+    cudaFree(d_qry_data);
+    cudaFree(d_qry_indptr);
+    cudaFree(d_qry_indices);
 
     cudaFree(d_gene_idx);
     cudaFree(d_cell_idx);
@@ -182,6 +198,29 @@ __global__ void rankdata(float* dataIn, float* dataOut, const int datalen)
     }
 }
 
+__global__ void csr2dense(const uint16* data, const int* indptr, const int* indices, 
+        const int height, const int width, const int* genes, const int gene_num,
+        const int* cells, const int cell_num, uint16* res)
+{
+
+}
+
+__global__ void csr2dense(const uint16* data, const int* indptr, const int* indices, 
+    const int height, const int width, uint16* res)
+{
+    int bid = blockIdx.x;
+    int tid = threadIdx.x;
+    int threads = blockDim.x;
+
+    int start = indptr[bid];
+    int end = indptr[bid+1];
+
+    for (int i = start+tid; i < end; i += threads)
+    {
+        res[size_t(bid)*width + indices[i]] = data[i];
+    }
+}
+
 bool copyin_score(InputData& rawdata)
 {
     ref_height = rawdata.ref_height;
@@ -205,12 +244,32 @@ bool copyin_score(InputData& rawdata)
         return false;
     }
 
-    CHECK(cudaMalloc(( void** )&d_ref, rawdata.ref.size() * sizeof(uint16)));
-    CHECK(cudaMemcpy(d_ref, rawdata.ref.data(), rawdata.ref.size() * sizeof(uint16),
+    // CHECK(cudaMalloc(( void** )&d_ref, rawdata.ref.size() * sizeof(uint16)));
+    // CHECK(cudaMemcpy(d_ref, rawdata.ref.data(), rawdata.ref.size() * sizeof(uint16),
+    //                  cudaMemcpyHostToDevice));
+
+    // CHECK(cudaMalloc(( void** )&d_qry, rawdata.qry.size() * sizeof(uint16)));
+    // CHECK(cudaMemcpy(d_qry, rawdata.qry.data(), rawdata.qry.size() * sizeof(uint16),
+    //                  cudaMemcpyHostToDevice));
+
+    CHECK(cudaMalloc(( void** )&d_ref_data, rawdata.ref_data.size() * sizeof(uint16)));
+    CHECK(cudaMemcpy(d_ref_data, rawdata.ref_data.data(), rawdata.ref_data.size() * sizeof(uint16),
+                     cudaMemcpyHostToDevice));
+    CHECK(cudaMalloc(( void** )&d_ref_indptr, rawdata.ref_indptr.size() * sizeof(int)));
+    CHECK(cudaMemcpy(d_ref_indptr, rawdata.ref_indptr.data(), rawdata.ref_indptr.size() * sizeof(int),
+                    cudaMemcpyHostToDevice));
+    CHECK(cudaMalloc(( void** )&d_ref_indices, rawdata.ref_indices.size() * sizeof(int)));
+    CHECK(cudaMemcpy(d_ref_indices, rawdata.ref_indices.data(), rawdata.ref_indices.size() * sizeof(int),
                      cudaMemcpyHostToDevice));
 
-    CHECK(cudaMalloc(( void** )&d_qry, rawdata.qry.size() * sizeof(uint16)));
-    CHECK(cudaMemcpy(d_qry, rawdata.qry.data(), rawdata.qry.size() * sizeof(uint16),
+    CHECK(cudaMalloc(( void** )&d_qry_data, rawdata.qry_data.size() * sizeof(uint16)));
+    CHECK(cudaMemcpy(d_qry_data, rawdata.qry_data.data(), rawdata.qry_data.size() * sizeof(uint16),
+                     cudaMemcpyHostToDevice));
+    CHECK(cudaMalloc(( void** )&d_qry_indptr, rawdata.qry_indptr.size() * sizeof(int)));
+    CHECK(cudaMemcpy(d_qry_indptr, rawdata.qry_indptr.data(), rawdata.qry_indptr.size() * sizeof(int),
+                    cudaMemcpyHostToDevice));
+    CHECK(cudaMalloc(( void** )&d_qry_indices, rawdata.qry_indices.size() * sizeof(int)));
+    CHECK(cudaMemcpy(d_qry_indices, rawdata.qry_indices.data(), rawdata.qry_indices.size() * sizeof(int),
                      cudaMemcpyHostToDevice));
 
     h_ctidx = rawdata.ctidx;
@@ -219,8 +278,8 @@ bool copyin_score(InputData& rawdata)
     CHECK(cudaMalloc(( void** )&d_cell_idx, ref_height * sizeof(uint32)));
     CHECK(cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16)));
 
-    CHECK(cudaMalloc(( void** )&d_ref_rank, rawdata.ref.size() * sizeof(float)));
-    CHECK(cudaMalloc(( void** )&d_qry_rank, rawdata.qry.size() * sizeof(float)));
+    CHECK(cudaMalloc(( void** )&d_ref_rank, size_t(ref_height)*ref_width * sizeof(float)));
+    CHECK(cudaMalloc(( void** )&d_qry_rank, size_t(qry_height)*qry_width * sizeof(float)));
     CHECK(cudaMalloc(( void** )&d_score, 1024 * ref_height * sizeof(float)));
 
     std::cout << "score() used gpu mem(MB): " << estimated_mem << std::endl;
@@ -751,6 +810,16 @@ inline bool bincount(const uint64 max_uniq_gene)
 
 vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
 {
+    CHECK(cudaMalloc(( void** )&d_ref, size_t(ref_height) * ref_width * sizeof(uint16)));
+    // CHECK(cudaMemset(d_ref, 0, size_t(ref_height) * ref_width * sizeof(uint16)));
+    csr2dense<<<ref_height, 1024>>> (d_ref_data, d_ref_indptr, d_ref_indices, ref_height, ref_width, d_ref);
+    CHECK(cudaGetLastError());
+
+    CHECK(cudaMalloc(( void** )&d_qry, size_t(qry_height) * qry_width * sizeof(uint16)));
+    // CHECK(cudaMemset(d_qry, 0, size_t(qry_height) * qry_width * sizeof(uint16)));
+    csr2dense<<<qry_height, 1024>>> (d_qry_data, d_qry_indptr, d_qry_indices, qry_height, qry_width, d_qry);
+    CHECK(cudaGetLastError());
+
     if (bincount(max_uniq_gene))
     {
         // Using bincount method

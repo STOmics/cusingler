@@ -67,10 +67,13 @@ bool Pipeline::score()
     for (auto& i : first_label_index)
         first_labels.push_back(raw_data.celltypes[i]);
 
+    for (int i = 0; i < 30; ++i)
+        cout<<raw_data.celltypes[first_label_index[i]]<<endl;
+
     destroy_score();
 
     cout << "score data cost time(s): " << timer.toc() << endl;
-
+    exit(-1);
     return true;
 }
 
