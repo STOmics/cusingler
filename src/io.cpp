@@ -457,6 +457,64 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
     return true;
 }
 
+bool DataParser::csrFilter(vector<float>& data, vector<int>& indptr, vector<int>& indices,
+                           set<uint32>& cols, 
+                           vector<uint16>& res_data, vector<int>& res_indptr, 
+                           vector<int>& res_indices, uint64& max_uniq_gene)
+{
+
+    int                 width = cols.size();
+    map<uint32, uint32> index_map;
+    uint32              index = 0;
+    for (auto& c : cols)
+    {
+        index_map[c] = index++;
+    }
+
+    int height = indptr.size() - 1;
+    res_data.clear();
+    res_indptr.clear();
+    res_indptr.push_back(0);
+    res_indices.clear();
+
+    uint64 curr_uniq_gene = 0;
+    for (uint32 j = 0; j < indptr.size() - 1; j++)
+    {
+        auto start = indptr[j];
+        auto end   = indptr[j + 1];
+
+        set<float> uniq;
+        for (int i = start; i < end; ++i)
+        {
+            auto raw_index = indices[i];
+            if (index_map.count(raw_index) != 0)
+            {
+                uniq.insert(data[i]);
+            }
+        }
+        curr_uniq_gene = max(uniq.size() + 1, curr_uniq_gene);
+        vector<float>                order(uniq.begin(), uniq.end());
+        unordered_map<float, uint16> index;
+        for (uint16 i = 0; i < order.size(); ++i)
+        {
+            // There is not exists 0 in csr format, so start from 1
+            index[order[i]] = i + 1;
+        }
+
+        for (int i = start; i < end; ++i)
+        {
+            if (index_map.count(indices[i]) == 0)
+                continue;
+            res_indices.push_back(index_map[indices[i]]);
+            res_data.push_back(index[data[i]]);
+        }
+        res_indptr.push_back(res_data.size());
+    }
+    max_uniq_gene = max(max_uniq_gene, curr_uniq_gene);
+
+    return true;
+}
+
 bool DataParser::loadQryData()
 {
     loadQryMatrix();
@@ -679,7 +737,10 @@ bool DataParser::generateDenseMatrix(int step, uint64& max_uniq_gene)
         }
     }
 
-    csr2dense(ref_data, ref_indptr, ref_indices, gene_set, raw_data.ref, max_uniq_gene);
+    // csr2dense(ref_data, ref_indptr, ref_indices, gene_set, raw_data.ref, max_uniq_gene);
+    csrFilter(ref_data, ref_indptr, ref_indices, gene_set, 
+        raw_data.ref_data, raw_data.ref_indptr, raw_data.ref_indices, max_uniq_gene);
+    
     ref_width           = gene_set.size();
     raw_data.ref_width  = ref_width;
     raw_data.ref_height = ref_height;
@@ -687,7 +748,10 @@ bool DataParser::generateDenseMatrix(int step, uint64& max_uniq_gene)
     cout << "ref data shape: " << ref_height << " x " << ref_width
          << " non-zero number: " << ref_data.size() << endl;
 
-    csr2dense(qry_data, qry_indptr, qry_indices, gene_set, raw_data.qry, max_uniq_gene);
+    // csr2dense(qry_data, qry_indptr, qry_indices, gene_set, raw_data.qry, max_uniq_gene);
+    csrFilter(qry_data, qry_indptr, qry_indices, gene_set, 
+        raw_data.qry_data, raw_data.qry_indptr, raw_data.qry_indices, max_uniq_gene);
+
     qry_width           = gene_set.size();
     raw_data.qry_height = qry_height;
     raw_data.qry_width  = qry_width;

@@ -19,9 +19,13 @@ typedef unsigned long  uint64;
 struct InputData
 {
     vector<uint16> ref;  // expression matrix as reference, cell x gene
+    vector<uint16> ref_data;
+    vector<int> ref_indptr, ref_indices;
     uint32         ref_height, ref_width;
 
     vector<uint16> qry;  // expression matrix as query data, cell x gene
+    vector<uint16> qry_data;
+    vector<int> qry_indptr, qry_indices;
     uint32         qry_height, qry_width;
     vector<char*>  qry_cellnames;
 
