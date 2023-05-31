@@ -21,6 +21,7 @@ cudaStream_t   stream;
 uint16 *       d_ref, *d_qry;
 uint16 *       d_ref_data, *d_qry_data;
 int * d_ref_indptr, *d_qry_indptr, *d_ref_indices, *d_qry_indices;
+uint16 * d_ref_dense;
 
 vector<float>  h_labels;
 uint32         ref_height, ref_width, qry_height, qry_width;
@@ -96,6 +97,7 @@ bool destroy()
     cudaFree(d_cell_idx);
     cudaFree(d_qry_line);
     cudaFree(d_ref_lines);
+    cudaFree(d_ref_dense);
     cudaFree(d_qry_rank);
     cudaFree(d_ref_rank);
     cudaFree(d_score);
@@ -198,13 +200,52 @@ __global__ void rankdata(float* dataIn, float* dataOut, const int datalen)
     }
 }
 
+// for ref data, including specific rows and total columns
 __global__ void csr2dense(const uint16* data, const int* indptr, const int* indices, 
-        const int height, const int width, const int* genes, const int gene_num,
-        const int* cells, const int cell_num, uint16* res)
+    const uint32* cells, const size_t cell_num, 
+    const uint32 width, uint16* res)
 {
+    int bid = blockIdx.x;
+    int tid = threadIdx.x;
+    int threads = blockDim.x;
 
+    int cell_line = cells[bid];
+    int start = indptr[cell_line];
+    int end = indptr[cell_line+1];
+
+    for (int i = start+tid; i < end; i += threads)
+    {
+        res[size_t(bid)*width + indices[i]] = data[i];
+    }
 }
 
+// for qry data, including single row and specific columns
+__global__ void csr2dense(const uint16* data, const int* indptr, const int* indices, 
+        const uint32* genes, const size_t gene_num,
+        const int cell_line, const uint32 width, uint16* res)
+{
+    // int bid = blockIdx.x;
+    int tid = threadIdx.x;
+    int threads = blockDim.x;
+
+    int start = indptr[cell_line];
+    int end = indptr[cell_line+1];
+
+    // csr2dense
+    for (int i = start+tid; i < end; i += threads)
+    {
+        res[width+indices[i]] = data[i];
+    }
+    __syncthreads();
+
+    // fitler by columns
+    for (int i = tid; i < gene_num; i += threads)
+    {
+        res[i] = res[width+genes[i]];
+    }
+}
+
+// for total data, including all rows and columns
 __global__ void csr2dense(const uint16* data, const int* indptr, const int* indices, 
     const int height, const int width, uint16* res)
 {
@@ -312,17 +353,37 @@ bool copyin(InputData& rawdata)
     }
 
     CHECK(cudaStreamCreate(&stream));
-    CHECK(cudaMallocPitch(( void** )&d_ref, &pitchref, ref_width * sizeof(uint16),
-                          ref_height));
-    CHECK(cudaMallocPitch(( void** )&d_qry, &pitchqry, qry_width * sizeof(uint16),
-                          qry_height));
+    // CHECK(cudaMallocPitch(( void** )&d_ref, &pitchref, ref_width * sizeof(uint16),
+    //                       ref_height));
+    // CHECK(cudaMallocPitch(( void** )&d_qry, &pitchqry, qry_width * sizeof(uint16),
+    //                       qry_height));
 
-    CHECK(cudaMemcpy2DAsync(d_ref, pitchref, rawdata.ref.data(),
-                            ref_width * sizeof(uint16), ref_width * sizeof(uint16),
-                            ref_height, cudaMemcpyHostToDevice, stream));
-    CHECK(cudaMemcpy2DAsync(d_qry, pitchqry, rawdata.qry.data(),
-                            qry_width * sizeof(uint16), qry_width * sizeof(uint16),
-                            qry_height, cudaMemcpyHostToDevice, stream));
+    // CHECK(cudaMemcpy2DAsync(d_ref, pitchref, rawdata.ref.data(),
+    //                         ref_width * sizeof(uint16), ref_width * sizeof(uint16),
+    //                         ref_height, cudaMemcpyHostToDevice, stream));
+    // CHECK(cudaMemcpy2DAsync(d_qry, pitchqry, rawdata.qry.data(),
+    //                         qry_width * sizeof(uint16), qry_width * sizeof(uint16),
+    //                         qry_height, cudaMemcpyHostToDevice, stream));
+
+    CHECK(cudaMalloc(( void** )&d_ref_data, rawdata.ref_data.size() * sizeof(uint16)));
+    CHECK(cudaMemcpy(d_ref_data, rawdata.ref_data.data(), rawdata.ref_data.size() * sizeof(uint16),
+                     cudaMemcpyHostToDevice));
+    CHECK(cudaMalloc(( void** )&d_ref_indptr, rawdata.ref_indptr.size() * sizeof(int)));
+    CHECK(cudaMemcpy(d_ref_indptr, rawdata.ref_indptr.data(), rawdata.ref_indptr.size() * sizeof(int),
+                    cudaMemcpyHostToDevice));
+    CHECK(cudaMalloc(( void** )&d_ref_indices, rawdata.ref_indices.size() * sizeof(int)));
+    CHECK(cudaMemcpy(d_ref_indices, rawdata.ref_indices.data(), rawdata.ref_indices.size() * sizeof(int),
+                     cudaMemcpyHostToDevice));
+
+    CHECK(cudaMalloc(( void** )&d_qry_data, rawdata.qry_data.size() * sizeof(uint16)));
+    CHECK(cudaMemcpy(d_qry_data, rawdata.qry_data.data(), rawdata.qry_data.size() * sizeof(uint16),
+                     cudaMemcpyHostToDevice));
+    CHECK(cudaMalloc(( void** )&d_qry_indptr, rawdata.qry_indptr.size() * sizeof(int)));
+    CHECK(cudaMemcpy(d_qry_indptr, rawdata.qry_indptr.data(), rawdata.qry_indptr.size() * sizeof(int),
+                    cudaMemcpyHostToDevice));
+    CHECK(cudaMalloc(( void** )&d_qry_indices, rawdata.qry_indices.size() * sizeof(int)));
+    CHECK(cudaMemcpy(d_qry_indices, rawdata.qry_indices.data(), rawdata.qry_indices.size() * sizeof(int),
+                     cudaMemcpyHostToDevice));
 
     h_labels = rawdata.labels;
 
@@ -335,11 +396,12 @@ bool copyin(InputData& rawdata)
 
     CHECK(cudaMalloc(( void** )&d_gene_idx, qry_width * sizeof(uint32)));
     CHECK(cudaMalloc(( void** )&d_cell_idx, ref_height * sizeof(uint32)));
-    CHECK(cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16)));
+    CHECK(cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16) * 2));   // for cache
     CHECK(cudaMalloc(( void** )&d_qry_rank, qry_width * sizeof(float)));
 
-    CHECK(cudaMalloc(( void** )&d_ref_lines, rawdata.ref.size() * sizeof(uint16)));
-    CHECK(cudaMalloc(( void** )&d_ref_rank, rawdata.ref.size() * sizeof(float)));
+    CHECK(cudaMalloc(( void** )&d_ref_dense, size_t(ref_height) * ref_width * sizeof(uint16)));
+    CHECK(cudaMalloc(( void** )&d_ref_lines, size_t(ref_height) * ref_width * sizeof(uint16)));
+    CHECK(cudaMalloc(( void** )&d_ref_rank, size_t(ref_height) * ref_width * sizeof(float)));
     CHECK(cudaMalloc(( void** )&d_score, ref_height * sizeof(float)));
 
     std::cout << "finetune() used gpu mem(MB): " << estimated_mem << std::endl;
@@ -374,6 +436,7 @@ __global__ void get_device_ref_pitch(uint32* gene_idx, const uint32 gene_len,
         row_head_lines[ny] = row_head[ref_width - gene_idx[ny] - 1];
     }
 }
+
 __global__ void get_device_ref_lines(const uint32* gene_idx, const uint32 gene_len,
                                      const uint32* cell_idx, const uint32 cell_len,
                                      uint16* ref, const uint32 ref_width,
@@ -387,17 +450,19 @@ __global__ void get_device_ref_lines(const uint32* gene_idx, const uint32 gene_l
         res[nx * gene_len + ny] = row_head[gene_idx[ny]];
     }
 }
-__global__ void get_device_ref_lines(uint32* gene_idx, const uint32 gene_len,
-                                     uint32* cell_idx, const uint32 cell_len, float* ref,
-                                     const uint32 ref_width, const uint64 ref_pitch,
-                                     float* res)
+
+// only filter by columns
+__global__ void get_device_ref_lines(const uint32* gene_idx, const uint32 gene_len,
+                                     uint16* ref, const uint32 ref_width,
+                                     uint16* res)
 {
     int nx = blockIdx.x * blockDim.x + threadIdx.x;
     int ny = blockIdx.y * blockDim.y + threadIdx.y;
-    if (nx < cell_len && ny < gene_len)
+    // TODO: optimize for one block process one row
+    if (ny < gene_len)
     {
-        float* row_head = ( float* )(( char* )ref + ( uint64 )(cell_idx[nx]) * ref_pitch);
-        res[nx * gene_len + ny] = row_head[ref_width - gene_idx[ny] - 1];
+        uint16* row_head        = ref + size_t(nx) * ref_width;
+        res[nx * gene_len + ny] = row_head[gene_idx[ny]];
     }
 }
 
@@ -941,7 +1006,7 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
     return first_labels;
 }
 
-vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,
+vector<uint32> finetune_round(int qry_line, vector<uint32> top_labels,
                               const uint64 max_uniq_gene)
 {
     set<uint32> uniq_genes;
@@ -969,8 +1034,14 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,
     CHECK(cudaMemcpy(d_gene_idx, h_gene_idx.data(), h_gene_idx.size() * sizeof(uint32),
                      cudaMemcpyHostToDevice));
 
-    get_device_qry_line<<<(h_gene_idx.size() - 1) / 1024 + 1, 1024>>>(
-        d_gene_idx, qry, h_gene_idx.size(), qry_width, d_qry_line);
+    // get_device_qry_line<<<(h_gene_idx.size() - 1) / 1024 + 1, 1024>>>(
+    //     d_gene_idx, ( uint16* )(( char* )d_qry + qry_line * pitchqry), h_gene_idx.size(), qry_width, d_qry_line);
+
+    CHECK(cudaMemset(d_qry_line, 0, qry_width * 2 * sizeof(uint16)));
+    
+    csr2dense<<<1, 1024>>>(
+        d_qry_data, d_qry_indptr, d_qry_indices, d_gene_idx, h_gene_idx.size(), 
+        qry_line, qry_width, d_qry_line);
     CHECK(cudaGetLastError());
 
     // get rank of qry data
@@ -1010,11 +1081,22 @@ vector<uint32> finetune_round(uint16* qry, vector<uint32> top_labels,
                      cudaMemcpyHostToDevice));
 
     dim3 blockDim(1, 512);
-    dim3 gridDim(h_cell_idx.size(), h_gene_idx.size() / 512 + 1);
+    dim3 gridDim(h_cell_idx.size(), (h_gene_idx.size()-1) / 512 + 1);
 
-    get_device_ref_lines<<<gridDim, blockDim>>>(d_gene_idx, h_gene_idx.size(), d_cell_idx,
-                                                h_cell_idx.size(), d_ref, ref_width,
-                                                ( uint64 )pitchref, d_ref_lines);
+    CHECK(cudaMemset(d_ref_dense, 0, ref_width*h_cell_idx.size() * sizeof(uint16)));
+
+    csr2dense<<<h_cell_idx.size(), 1024>>>(d_ref_data, d_ref_indptr, d_ref_indices,
+        d_cell_idx, h_cell_idx.size(),
+        ref_width, d_ref_dense);
+    CHECK(cudaGetLastError());
+
+    get_device_ref_lines<<<gridDim, blockDim>>>(d_gene_idx, h_gene_idx.size(), d_ref_dense, ref_width, d_ref_lines);
+
+    // get_device_ref_lines<<<gridDim, blockDim>>>(d_gene_idx, h_gene_idx.size(), d_cell_idx,
+    //                                             h_cell_idx.size(), d_ref, ref_width,
+    //                                             ( uint64 )pitchref, d_ref_lines);
+
+
     CHECK(cudaGetLastError());
 
     if (bincount(max_uniq_gene))
@@ -1084,7 +1166,7 @@ vector<uint32> cufinetune(const uint64 max_uniq_gene)
     // process each cell
     for (int i = 0; i < qry_height; ++i)
     {
-        uint16* qry_head = ( uint16* )(( char* )d_qry + i * pitchqry);
+        // uint16* qry_head = ( uint16* )(( char* )d_qry + i * pitchqry);
 
         vector<uint32> top_labels;
 
@@ -1097,7 +1179,7 @@ vector<uint32> cufinetune(const uint64 max_uniq_gene)
 
         while (top_labels.size() > 1)
         {
-            top_labels = finetune_round(qry_head, top_labels, max_uniq_gene);
+            top_labels = finetune_round(i, top_labels, max_uniq_gene);
         }
 
         res.push_back(top_labels.front());
