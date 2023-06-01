@@ -38,3 +38,14 @@ struct InputData
 
     vector<uint32> ctidx;
 };
+
+struct Slice
+{
+    bool on;
+
+    uint32 qry_rows;
+    uint32 ref_rows;
+
+    uint32 qry_steps;
+    uint32 ref_steps;
+};

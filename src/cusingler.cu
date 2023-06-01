@@ -38,6 +38,8 @@ float*  d_score;
 
 int shared_mem_per_block;
 
+Slice slice;
+
 #define CHECK(call)                                                            \
     {                                                                          \
         const cudaError_t error = call;                                        \
@@ -109,8 +111,9 @@ bool destroy()
 
 bool destroy_score()
 {
-    // cudaFree(d_ref);
-    // cudaFree(d_qry);
+    cudaFree(d_ref);
+    cudaFree(d_qry);
+
     cudaFree(d_ref_data);
     cudaFree(d_ref_indptr);
     cudaFree(d_ref_indices);
@@ -210,6 +213,25 @@ __global__ void csr2dense(const uint16* data, const int* indptr, const int* indi
     int threads = blockDim.x;
 
     int cell_line = cells[bid];
+    int start = indptr[cell_line];
+    int end = indptr[cell_line+1];
+
+    for (int i = start+tid; i < end; i += threads)
+    {
+        res[size_t(bid)*width + indices[i]] = data[i];
+    }
+}
+
+// for ref data, including specific rows and total columns
+__global__ void csr2dense(const uint16* data, const int* indptr, const int* indices, 
+    const uint32 cell_start,
+    const uint32 width, uint16* res)
+{
+    int bid = blockIdx.x;
+    int tid = threadIdx.x;
+    int threads = blockDim.x;
+
+    int cell_line = cell_start + bid;
     int start = indptr[cell_line];
     int end = indptr[cell_line+1];
 
@@ -319,11 +341,69 @@ bool copyin_score(InputData& rawdata)
     CHECK(cudaMalloc(( void** )&d_cell_idx, ref_height * sizeof(uint32)));
     CHECK(cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16)));
 
-    CHECK(cudaMalloc(( void** )&d_ref_rank, size_t(ref_height)*ref_width * sizeof(float)));
-    CHECK(cudaMalloc(( void** )&d_qry_rank, size_t(qry_height)*qry_width * sizeof(float)));
+    
     CHECK(cudaMalloc(( void** )&d_score, 1024 * ref_height * sizeof(float)));
 
+    // Big memory mode
+    size_t need_mem = (size_t(ref_height) * ref_width + size_t(qry_height) * qry_width) * (sizeof(uint16) + sizeof(float)) / 1024 / 1024;
+    free_mem = getFreeMem();
+    // test controling free mem
+    free_mem = 500;
+    cout<<"free mem: "<<free_mem<<" need mem: "<<need_mem<<endl;
+    cout<<"used mem: "<<getUsedMem()<<endl;
+    if (free_mem > need_mem)
+    {
+        slice.on = false;
+        CHECK(cudaMalloc(( void** )&d_ref, size_t(ref_height) * ref_width * sizeof(uint16)));
+        CHECK(cudaMalloc(( void** )&d_qry, size_t(qry_height) * qry_width * sizeof(uint16)));
+        CHECK(cudaMalloc(( void** )&d_ref_rank, size_t(ref_height)*ref_width * sizeof(float)));
+        CHECK(cudaMalloc(( void** )&d_qry_rank, size_t(qry_height)*qry_width * sizeof(float)));
+    }
+    else
+    {
+        slice.on = true;
+        // Prioritize meet ref matrix
+        size_t ref_need_mem = size_t(ref_height) * ref_width * (sizeof(uint16) + sizeof(float)) / 1000 / 1000;
+        cout<<"ref need mem: "<<ref_need_mem<<endl;
+        if (free_mem > ref_need_mem)
+        {
+            slice.ref_rows = ref_height;
+            slice.ref_steps = 1;
+            CHECK(cudaMalloc(( void** )&d_ref, size_t(slice.ref_rows) * ref_width * sizeof(uint16)));
+            CHECK(cudaMalloc(( void** )&d_ref_rank, size_t(slice.ref_rows)*ref_width * sizeof(float)));
+
+            free_mem -= ref_need_mem;
+            slice.qry_rows = free_mem * 1000 * 1000 / (sizeof(uint16) + sizeof(float)) / qry_width;
+            slice.qry_steps = (qry_height - 1) / slice.qry_rows + 1;
+            CHECK(cudaMalloc(( void** )&d_qry, size_t(slice.qry_rows) * qry_width * sizeof(uint16)));
+            CHECK(cudaMalloc(( void** )&d_qry_rank, size_t(slice.qry_rows)*qry_width * sizeof(float)));
+
+            cout<<"total ref: "<<slice.ref_rows<<" "<<slice.ref_steps<<" "<<
+                slice.qry_rows<<" "<<slice.qry_steps<<endl;
+        }
+        else
+        {
+            size_t total_rows = free_mem * 1000 * 1000 / (sizeof(uint16) + sizeof(float)) / qry_width;
+            size_t ratio = float(ref_height + qry_height) / total_rows + 0.5;
+            cout<<"total rows: "<<total_rows<<" "<<ratio<<endl;
+            slice.ref_rows = ref_height / ratio + 1;
+            slice.ref_steps = (ref_height - 1) / slice.ref_rows + 1;
+            CHECK(cudaMalloc(( void** )&d_ref, size_t(slice.ref_rows) * ref_width * sizeof(uint16)));
+            CHECK(cudaMalloc(( void** )&d_ref_rank, size_t(slice.ref_rows)*ref_width * sizeof(float)));
+
+            slice.qry_rows = qry_height / ratio + 1;
+            slice.qry_steps = (qry_height - 1) / slice.qry_rows + 1;
+            CHECK(cudaMalloc(( void** )&d_qry, size_t(slice.qry_rows) * qry_width * sizeof(uint16)));
+            CHECK(cudaMalloc(( void** )&d_qry_rank, size_t(slice.qry_rows)*qry_width * sizeof(float)));
+
+            cout<<"sub ref and qry: "<<slice.ref_rows<<" "<<slice.ref_steps<<" "<<
+                slice.qry_rows<<" "<<slice.qry_steps<<endl;
+        }
+    }
+
     std::cout << "score() used gpu mem(MB): " << estimated_mem << std::endl;
+
+    cout<<"used mem: "<<getUsedMem()<<endl;
 
     return true;
 }
@@ -875,12 +955,152 @@ inline bool bincount(const uint64 max_uniq_gene)
 
 vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
 {
-    CHECK(cudaMalloc(( void** )&d_ref, size_t(ref_height) * ref_width * sizeof(uint16)));
+    vector<float> res_scores(qry_height * ct_num, 0);
+    vector<int>   res_labels(qry_height, 0);
+
+    for (int q = 0; q < slice.qry_steps; ++q)
+    {
+        auto q_start = q * slice.qry_rows;
+        auto q_end = min((q+1) * slice.qry_rows, qry_height);
+        auto q_len = q_end - q_start;
+        cout<<"qry: "<<q_start<<" "<<q_end<<" "<<q_len<<endl;
+
+        CHECK(cudaMemset(d_qry, 0, size_t(slice.qry_rows) * qry_width * sizeof(uint16)));
+        csr2dense<<<q_len, 1024>>> (d_qry_data, d_qry_indptr, d_qry_indices, q_start, 
+            qry_width, d_qry);
+        CHECK(cudaGetLastError());
+
+        vector<vector<float>> remaining(slice.qry_rows, vector<float>{});
+        int start_ct = 0;
+        size_t ct_idx = 0, total_len = 0;
+        vector<size_t> curr_ct;
+        
+        for (int r = 0; r < slice.ref_steps; ++r)
+        {
+            auto r_start = r * slice.ref_rows;
+            auto r_end = min((r+1) * slice.ref_rows, ref_height);
+            auto r_len = r_end - r_start;
+
+            cout<<"ref: "<<r_start<<" "<<r_end<<" "<<r_len<<endl;
+
+            CHECK(cudaMemset(d_ref, 0, size_t(slice.ref_rows) * ref_width * sizeof(uint16)));
+            csr2dense<<<r_len, 1024>>> (d_ref_data, d_ref_indptr, d_ref_indices, r_start, 
+                ref_width, d_ref);
+            CHECK(cudaGetLastError());
+
+            if (bincount(max_uniq_gene))
+            {
+                // Using bincount method
+                int shared_mem = max_uniq_gene * (sizeof(int) + sizeof(float));
+                rankdata_bin3<<<slice.ref_rows, 64, shared_mem>>>(d_ref, ref_width, slice.ref_rows,
+                                                            max_uniq_gene, d_ref_rank);
+                CHECK(cudaGetLastError());
+
+                rankdata_bin3<<<slice.qry_rows, 64, shared_mem>>>(d_qry, qry_width, slice.qry_rows,
+                                                            max_uniq_gene, d_qry_rank);
+                CHECK(cudaGetLastError());
+            }
+            else
+            {
+                rankdata_batch<<<(slice.ref_rows * ref_width - 1) / 512 + 1, 512>>>(
+                    d_ref, d_ref_rank, ref_width, slice.ref_rows);
+                CHECK(cudaGetLastError());
+
+                rankdata_batch<<<(slice.qry_rows * qry_width - 1) / 512 + 1, 512>>>(
+                    d_qry, d_qry_rank, qry_width, slice.qry_rows);
+                CHECK(cudaGetLastError());
+            }
+
+            
+            for (int j = start_ct; j < ct_num; ++j)
+            {
+                size_t start = h_ctidx[j*2];
+                size_t len = h_ctidx[j * 2 + 1];
+                total_len += len;
+                if (total_len >= slice.ref_rows)
+                {
+                    // store remaining data and break
+                    ct_idx = start;
+                    start_ct = j;
+                    break;
+                }
+                curr_ct.push_back(start - ct_idx);
+                curr_ct.push_back(len);
+            }
+            // for (int i = 0; i < curr_ct.size(); ++i)
+            //     cout<<i<<" "<<curr_ct[i]<<" ";
+            // cout<<endl;
+
+            vector<float> h_score(1024 * slice.ref_rows, 0);
+            for (int line = 0; line < slice.qry_rows; line += 1024)
+            {
+                spearman<<<slice.ref_rows, 1024>>>(d_qry_rank, line, d_ref_rank, qry_width,
+                                            slice.qry_rows, slice.ref_rows, d_score);
+                CHECK(cudaGetLastError());
+                CHECK(cudaMemcpy(h_score.data(), d_score, 1024 * slice.ref_rows * sizeof(float),
+                                cudaMemcpyDeviceToHost));
+                for (int i = 0; i < 1024; ++i)
+                {
+                    if (line + i >= slice.qry_rows) break;
+
+                    remaining[line+i].insert(remaining[line+i].end(), 
+                        h_score.begin()+i*slice.ref_rows, h_score.begin()+(i+1)*slice.ref_rows);
+                }
+                
+                // Calculate real celltypes in current ref data
+                for (int i = 0; i < 1024; ++i)
+                {
+                    if (line + i >= slice.qry_rows) break;
+
+                    auto& score = remaining[line + i];
+                    size_t tmp_total_len = 0, start = 0;
+                    for (int j = 0; j < curr_ct.size()/2; ++j)
+                    {
+                        size_t len = curr_ct[j * 2 + 1];
+                        tmp_total_len += len;
+
+                        vector<float> tmp(score.begin() + start, score.begin() + tmp_total_len);
+                        float         score = percentile(tmp, len, 0.8);
+                        res_scores[(line+i)*ct_num + start_ct+j] = score;
+                        start += len;
+                    }
+                    score.assign(score.begin()+tmp_total_len, score.end());
+                }
+            }
+
+            curr_ct.clear();
+            total_len = 0;
+
+            
+        }
+        // break;
+    }
+    // calculate max score as first label
+    for (int i = 0; i < res_scores.size() / ct_num; ++i)
+    {
+        const auto& scores = res_scores.begin() + i*ct_num;
+        auto ele           = std::minmax_element(scores, scores+ct_num);
+        res_labels[i] = (ele.second - scores);
+        float thre         = *ele.second - 0.05;  // max-0.05
+        for (int j = 0; j < ct_num; ++j)
+        {
+            if (*(scores+j) >= thre)
+            {
+                rawdata.labels[i*ct_num+j] = 1;
+            }
+            // else
+            // {
+            //     rawdata.labels[i*ct_num+j] = 0;
+            // }
+        }
+    }
+
+    return res_labels;
+    
     // CHECK(cudaMemset(d_ref, 0, size_t(ref_height) * ref_width * sizeof(uint16)));
     csr2dense<<<ref_height, 1024>>> (d_ref_data, d_ref_indptr, d_ref_indices, ref_height, ref_width, d_ref);
     CHECK(cudaGetLastError());
 
-    CHECK(cudaMalloc(( void** )&d_qry, size_t(qry_height) * qry_width * sizeof(uint16)));
     // CHECK(cudaMemset(d_qry, 0, size_t(qry_height) * qry_width * sizeof(uint16)));
     csr2dense<<<qry_height, 1024>>> (d_qry_data, d_qry_indptr, d_qry_indices, qry_height, qry_width, d_qry);
     CHECK(cudaGetLastError());
@@ -1164,7 +1384,7 @@ vector<uint32> cufinetune(const uint64 max_uniq_gene)
 
     vector<uint32> res;
     // process each cell
-    for (int i = 0; i < qry_height; ++i)
+    for (int i = 0; i < 30; ++i)
     {
         // uint16* qry_head = ( uint16* )(( char* )d_qry + i * pitchqry);
 
