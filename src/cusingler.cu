@@ -963,7 +963,7 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
         auto q_start = q * slice.qry_rows;
         auto q_end = min((q+1) * slice.qry_rows, qry_height);
         auto q_len = q_end - q_start;
-        cout<<"qry: "<<q_start<<" "<<q_end<<" "<<q_len<<endl;
+        // cout<<"qry: "<<q_start<<" "<<q_end<<" "<<q_len<<endl;
 
         CHECK(cudaMemset(d_qry, 0, size_t(slice.qry_rows) * qry_width * sizeof(uint16)));
         csr2dense<<<q_len, 1024>>> (d_qry_data, d_qry_indptr, d_qry_indices, q_start, 
@@ -972,7 +972,7 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
 
         vector<vector<float>> remaining(slice.qry_rows, vector<float>{});
         int start_ct = 0;
-        size_t ct_idx = 0, total_len = 0;
+        size_t total_len = 0;
         vector<size_t> curr_ct;
         
         for (int r = 0; r < slice.ref_steps; ++r)
@@ -981,7 +981,7 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
             auto r_end = min((r+1) * slice.ref_rows, ref_height);
             auto r_len = r_end - r_start;
 
-            cout<<"ref: "<<r_start<<" "<<r_end<<" "<<r_len<<endl;
+            // cout<<"ref: "<<r_start<<" "<<r_end<<" "<<r_len<<endl;
 
             CHECK(cudaMemset(d_ref, 0, size_t(slice.ref_rows) * ref_width * sizeof(uint16)));
             csr2dense<<<r_len, 1024>>> (d_ref_data, d_ref_indptr, d_ref_indices, r_start, 
@@ -1012,24 +1012,18 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
             }
 
             
-            for (int j = start_ct; j < ct_num; ++j)
+            int j;
+            for (j = start_ct; j < ct_num; ++j)
             {
                 size_t start = h_ctidx[j*2];
                 size_t len = h_ctidx[j * 2 + 1];
                 total_len += len;
-                if (total_len >= slice.ref_rows)
+                if (total_len >= slice.ref_rows + remaining[0].size())
                 {
-                    // store remaining data and break
-                    ct_idx = start;
-                    start_ct = j;
                     break;
                 }
-                curr_ct.push_back(start - ct_idx);
                 curr_ct.push_back(len);
             }
-            // for (int i = 0; i < curr_ct.size(); ++i)
-            //     cout<<i<<" "<<curr_ct[i]<<" ";
-            // cout<<endl;
 
             vector<float> h_score(1024 * slice.ref_rows, 0);
             for (int line = 0; line < slice.qry_rows; line += 1024)
@@ -1054,9 +1048,9 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
 
                     auto& score = remaining[line + i];
                     size_t tmp_total_len = 0, start = 0;
-                    for (int j = 0; j < curr_ct.size()/2; ++j)
+                    for (int j = 0; j < curr_ct.size(); ++j)
                     {
-                        size_t len = curr_ct[j * 2 + 1];
+                        size_t len = curr_ct[j];
                         tmp_total_len += len;
 
                         vector<float> tmp(score.begin() + start, score.begin() + tmp_total_len);
@@ -1068,12 +1062,10 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
                 }
             }
 
+            start_ct += curr_ct.size();
             curr_ct.clear();
             total_len = 0;
-
-            
         }
-        // break;
     }
     // calculate max score as first label
     for (int i = 0; i < res_scores.size() / ct_num; ++i)
@@ -1088,10 +1080,6 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
             {
                 rawdata.labels[i*ct_num+j] = 1;
             }
-            // else
-            // {
-            //     rawdata.labels[i*ct_num+j] = 0;
-            // }
         }
     }
 
@@ -1384,7 +1372,7 @@ vector<uint32> cufinetune(const uint64 max_uniq_gene)
 
     vector<uint32> res;
     // process each cell
-    for (int i = 0; i < 30; ++i)
+    for (int i = 0; i < qry_height; ++i)
     {
         // uint16* qry_head = ( uint16* )(( char* )d_qry + i * pitchqry);
 
