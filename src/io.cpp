@@ -458,12 +458,10 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
 }
 
 bool DataParser::csrFilter(vector<float>& data, vector<int>& indptr, vector<int>& indices,
-                           set<uint32>& cols, 
-                           vector<uint16>& res_data, vector<int>& res_indptr, 
-                           vector<int>& res_indices, uint64& max_uniq_gene)
+                           set<uint32>& cols, vector<uint16>& res_data,
+                           vector<int>& res_indptr, vector<int>& res_indices,
+                           uint64& max_uniq_gene)
 {
-
-    int                 width = cols.size();
     map<uint32, uint32> index_map;
     uint32              index = 0;
     for (auto& c : cols)
@@ -471,7 +469,6 @@ bool DataParser::csrFilter(vector<float>& data, vector<int>& indptr, vector<int>
         index_map[c] = index++;
     }
 
-    int height = indptr.size() - 1;
     res_data.clear();
     res_indptr.clear();
     res_indptr.push_back(0);
@@ -737,10 +734,11 @@ bool DataParser::generateDenseMatrix(int step, uint64& max_uniq_gene)
         }
     }
 
-    // csr2dense(ref_data, ref_indptr, ref_indices, gene_set, raw_data.ref, max_uniq_gene);
-    csrFilter(ref_data, ref_indptr, ref_indices, gene_set, 
-        raw_data.ref_data, raw_data.ref_indptr, raw_data.ref_indices, max_uniq_gene);
-    
+    // csr2dense(ref_data, ref_indptr, ref_indices, gene_set, raw_data.ref,
+    // max_uniq_gene);
+    csrFilter(ref_data, ref_indptr, ref_indices, gene_set, raw_data.ref_data,
+              raw_data.ref_indptr, raw_data.ref_indices, max_uniq_gene);
+
     ref_width           = gene_set.size();
     raw_data.ref_width  = ref_width;
     raw_data.ref_height = ref_height;
@@ -748,9 +746,10 @@ bool DataParser::generateDenseMatrix(int step, uint64& max_uniq_gene)
     cout << "ref data shape: " << ref_height << " x " << ref_width
          << " non-zero number: " << ref_data.size() << endl;
 
-    // csr2dense(qry_data, qry_indptr, qry_indices, gene_set, raw_data.qry, max_uniq_gene);
-    csrFilter(qry_data, qry_indptr, qry_indices, gene_set, 
-        raw_data.qry_data, raw_data.qry_indptr, raw_data.qry_indices, max_uniq_gene);
+    // csr2dense(qry_data, qry_indptr, qry_indices, gene_set, raw_data.qry,
+    // max_uniq_gene);
+    csrFilter(qry_data, qry_indptr, qry_indices, gene_set, raw_data.qry_data,
+              raw_data.qry_indptr, raw_data.qry_indices, max_uniq_gene);
 
     qry_width           = gene_set.size();
     raw_data.qry_height = qry_height;

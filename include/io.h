@@ -40,8 +40,8 @@ private:
 
     // Filter csr data by columns
     bool csrFilter(vector<float>& data, vector<int>& indptr, vector<int>& indices,
-                    set<uint32>& cols, 
-                    vector<uint16>& res_data, vector<int>& ref_indptr, vector<int>& ref_indices, uint64& max_uniq_gene);
+                   set<uint32>& cols, vector<uint16>& res_data, vector<int>& ref_indptr,
+                   vector<int>& ref_indices, uint64& max_uniq_gene);
 
     vector<char*> getGeneIndex(string filename, string gene_index);
 
