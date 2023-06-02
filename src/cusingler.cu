@@ -283,10 +283,15 @@ bool copyin_score(InputData& rawdata)
     ct_num     = rawdata.ct_num;
 
     size_t estimated_mem = 0;
-    estimated_mem += (size_t(ref_height) * ref_width + size_t(qry_height) * qry_width)
-                     * (sizeof(uint16) + sizeof(float));
-    estimated_mem += qry_width * (sizeof(uint16) + sizeof(uint32));
-    estimated_mem += ref_height * (sizeof(uint32) + 1024 * sizeof(float));
+    estimated_mem += rawdata.ref_data.size() * sizeof(uint16);
+    estimated_mem += rawdata.ref_indptr.size() * sizeof(int);
+    estimated_mem += rawdata.ref_indices.size() * sizeof(int);
+
+    estimated_mem += rawdata.qry_data.size() * sizeof(uint16);
+    estimated_mem += rawdata.qry_indptr.size() * sizeof(int);
+    estimated_mem += rawdata.qry_indices.size() * sizeof(int);
+
+    estimated_mem += size_t(ref_height) * (1024 * sizeof(float));
     estimated_mem /= 1024 * 1024;
     estimated_mem += 255;  // system memory
     auto free_mem = getFreeMem();
@@ -324,11 +329,11 @@ bool copyin_score(InputData& rawdata)
     // Big memory mode
     size_t need_mem = (size_t(ref_height) * ref_width + size_t(qry_height) * qry_width)
                       * (sizeof(uint16) + sizeof(float)) / 1024 / 1024;
-    free_mem = getFreeMem();
-    // test controling free mem
-    cout << "free mem: " << free_mem << " need mem: " << need_mem << endl;
+    free_mem -= estimated_mem;
+    cout << "free GPU device mem(MB): " << free_mem << " total need mem(MB): " << need_mem << endl;
     if (free_mem > need_mem)
     {
+        cout<<"Load total ref and qry data into GPU device memory"<<endl;
         slice.on        = false;
         slice.ref_rows  = ref_height;
         slice.ref_steps = 1;
@@ -342,6 +347,8 @@ bool copyin_score(InputData& rawdata)
                          size_t(ref_height) * ref_width * sizeof(float)));
         CHECK(cudaMalloc(( void** )&d_qry_rank,
                          size_t(qry_height) * qry_width * sizeof(float)));
+
+        estimated_mem += need_mem;
     }
     else
     {
@@ -349,11 +356,12 @@ bool copyin_score(InputData& rawdata)
         // Prioritize meet ref matrix
         size_t ref_need_mem = size_t(ref_height) * ref_width
                               * (sizeof(uint16) + sizeof(float)) / 1000 / 1000;
-        cout << "total ref need mem: " << ref_need_mem << endl;
         if (free_mem > ref_need_mem)
         {
+
             slice.ref_rows  = ref_height;
             slice.ref_steps = 1;
+            cout<<"Load total ref data into GPU device memory, size(HxW): "<<slice.ref_rows << "x"<<ref_width<<endl;
             CHECK(cudaMalloc(( void** )&d_ref,
                              size_t(slice.ref_rows) * ref_width * sizeof(uint16)));
             CHECK(cudaMalloc(( void** )&d_ref_rank,
@@ -363,22 +371,20 @@ bool copyin_score(InputData& rawdata)
             slice.qry_rows =
                 free_mem * 1000 * 1000 / (sizeof(uint16) + sizeof(float)) / qry_width;
             slice.qry_steps = (qry_height - 1) / slice.qry_rows + 1;
+            cout<<"Load sub qry data into GPU device memory, size(HxW): "<<slice.qry_rows << "x"<<qry_width<<endl;
             CHECK(cudaMalloc(( void** )&d_qry,
                              size_t(slice.qry_rows) * qry_width * sizeof(uint16)));
             CHECK(cudaMalloc(( void** )&d_qry_rank,
                              size_t(slice.qry_rows) * qry_width * sizeof(float)));
-
-            cout << "total ref: " << slice.ref_rows << " " << slice.ref_steps << " "
-                 << slice.qry_rows << " " << slice.qry_steps << endl;
         }
         else
         {
             size_t total_rows =
                 free_mem * 1000 * 1000 / (sizeof(uint16) + sizeof(float)) / qry_width;
             size_t ratio = float(ref_height + qry_height) / total_rows + 0.5;
-            cout << "total rows: " << total_rows << " " << ratio << endl;
             slice.ref_rows  = ref_height / ratio + 1;
             slice.ref_steps = (ref_height - 1) / slice.ref_rows + 1;
+            cout<<"Load sub ref data into GPU device memory, size(HxW): "<<slice.ref_rows << "x"<<ref_width<<endl;
             CHECK(cudaMalloc(( void** )&d_ref,
                              size_t(slice.ref_rows) * ref_width * sizeof(uint16)));
             CHECK(cudaMalloc(( void** )&d_ref_rank,
@@ -386,18 +392,17 @@ bool copyin_score(InputData& rawdata)
 
             slice.qry_rows  = qry_height / ratio + 1;
             slice.qry_steps = (qry_height - 1) / slice.qry_rows + 1;
+            cout<<"Load sub qry data into GPU device memory, size(HxW): "<<slice.qry_rows << "x"<<qry_width<<endl;
             CHECK(cudaMalloc(( void** )&d_qry,
                              size_t(slice.qry_rows) * qry_width * sizeof(uint16)));
             CHECK(cudaMalloc(( void** )&d_qry_rank,
                              size_t(slice.qry_rows) * qry_width * sizeof(float)));
-
-            cout << "sub ref and qry: " << slice.ref_rows << " " << slice.ref_steps << " "
-                 << slice.qry_rows << " " << slice.qry_steps << endl;
         }
+        estimated_mem += size_t(slice.ref_rows) * ref_width * (sizeof(uint16) + sizeof(float)) / 1024 / 1024;
+        estimated_mem += size_t(slice.qry_rows) * qry_width * (sizeof(uint16) + sizeof(float)) / 1024 / 1024;
     }
-
+    estimated_mem += 100; // for reserve
     std::cout << "score() used gpu mem(MB): " << estimated_mem << std::endl;
-
     return true;
 }
 
@@ -410,11 +415,17 @@ bool copyin(InputData& rawdata)
     ct_num     = rawdata.ct_num;
 
     size_t estimated_mem = 0;
-    estimated_mem += (size_t(ref_height) * ref_width + size_t(qry_height) * qry_width)
-                     * sizeof(uint16);
-    estimated_mem += qry_width * (sizeof(uint16) + sizeof(uint32) + sizeof(float));
+    estimated_mem += rawdata.ref_data.size() * sizeof(uint16);
+    estimated_mem += rawdata.ref_indptr.size() * sizeof(int);
+    estimated_mem += rawdata.ref_indices.size() * sizeof(int);
+
+    estimated_mem += rawdata.qry_data.size() * sizeof(uint16);
+    estimated_mem += rawdata.qry_indptr.size() * sizeof(int);
+    estimated_mem += rawdata.qry_indices.size() * sizeof(int);
+
+    estimated_mem += qry_width * (sizeof(uint16)*2 + sizeof(uint32) + sizeof(float));
     estimated_mem += ref_height * (sizeof(uint32) + sizeof(float));
-    estimated_mem += size_t(ref_height) * ref_width * (sizeof(uint16) + sizeof(float));
+
     estimated_mem /= 1024 * 1024;
     estimated_mem += 255;  // system memory
     auto free_mem = getFreeMem();
@@ -454,19 +465,19 @@ bool copyin(InputData& rawdata)
 
     CHECK(cudaMalloc(( void** )&d_gene_idx, qry_width * sizeof(uint32)));
     CHECK(cudaMalloc(( void** )&d_cell_idx, ref_height * sizeof(uint32)));
-    CHECK(
-        cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16) * 2));  // for cache
+    // double memory for cache
+    CHECK(cudaMalloc(( void** )&d_qry_line, qry_width * sizeof(uint16) * 2));
     CHECK(cudaMalloc(( void** )&d_qry_rank, qry_width * sizeof(float)));
     CHECK(cudaMalloc(( void** )&d_score, ref_height * sizeof(float)));
 
     // Big memory mode
+    free_mem -= estimated_mem;
     size_t need_mem = (size_t(ref_height) * ref_width)
                       * (sizeof(uint16) * 2 + sizeof(float)) / 1024 / 1024;
-    free_mem = getFreeMem();
-    // test controling free mem
-    cout << "free mem: " << free_mem << " need mem: " << need_mem << endl;
+    cout << "free GPU device mem(MB): " << free_mem << " total need mem(MB): " << need_mem << endl;
     if (free_mem > need_mem)
     {
+        cout<<"Load total ref and qry data into GPU device memory"<<endl;
         slice.on       = false;
         slice.ref_rows = ref_height;
         CHECK(cudaMalloc(( void** )&d_ref_dense,
@@ -475,15 +486,20 @@ bool copyin(InputData& rawdata)
                          size_t(ref_height) * ref_width * sizeof(uint16)));
         CHECK(cudaMalloc(( void** )&d_ref_rank,
                          size_t(ref_height) * ref_width * sizeof(float)));
+
+        estimated_mem += need_mem;
     }
     else
     {
         slice.on = true;
         size_t total_rows =
             free_mem * 1000 * 1000 / (sizeof(uint16) * 2 + sizeof(float)) / ref_width;
-        cout << "total rows: " << total_rows << endl;
+        // cout << "total rows: " << total_rows << endl;
+
         slice.ref_rows  = total_rows + 1;
         slice.ref_steps = (ref_height - 1) / slice.ref_rows + 1;
+        cout<<"Load sub ref data into GPU device memory, size(HxW): "<<slice.ref_rows << "x"<<ref_width<<endl;
+
         CHECK(cudaMalloc(( void** )&d_ref_dense,
                          size_t(slice.ref_rows) * ref_width * sizeof(uint16)));
         CHECK(cudaMalloc(( void** )&d_ref_lines,
@@ -491,11 +507,10 @@ bool copyin(InputData& rawdata)
         CHECK(cudaMalloc(( void** )&d_ref_rank,
                          size_t(slice.ref_rows) * ref_width * sizeof(float)));
 
-        cout << "sub ref: " << slice.ref_rows << " " << slice.ref_steps << endl;
+        estimated_mem += size_t(slice.ref_rows) * ref_width * (sizeof(uint16) * 2 + sizeof(float)) / 1024 / 1024;
     }
-
+    estimated_mem += 100; // for reserve
     std::cout << "finetune() used gpu mem(MB): " << estimated_mem << std::endl;
-
     return true;
 }
 
@@ -1012,8 +1027,7 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
             {
                 CHECK(cudaMemset(d_ref, 0,
                                  size_t(slice.ref_rows) * ref_width * sizeof(uint16)));
-                csr2dense<<<r_len, 1024>>> (d_ref_data, d_ref_indptr, d_ref_indices, r_start, 
-            csr2dense<<<r_len, 1024>>> (d_ref_data, d_ref_indptr, d_ref_indices, r_start, 
+                
                 csr2dense<<<r_len, 1024>>> (d_ref_data, d_ref_indptr, d_ref_indices, r_start, 
                     ref_width, d_ref);
                 CHECK(cudaGetLastError());
