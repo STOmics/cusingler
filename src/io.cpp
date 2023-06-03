@@ -277,6 +277,9 @@ vector<char*> DataParser::getGeneIndex(string filename, string gene_index = "")
         Attribute attr(group.openAttribute("_index"));
         auto      datatype = attr.getDataType();
         attr.read(datatype, gene_index);
+        // FIXME: not robust
+        if (gene_index == "Gene_ID")
+            gene_index = "Symbol";
     }
     auto res = getDataset<char*>(group, gene_index.c_str());
 
@@ -287,7 +290,6 @@ vector<char*> DataParser::getGeneIndex(string filename, string gene_index = "")
 bool DataParser::findIntersectionGenes()
 {
     vector<char*> ref_genes, qry_genes;
-    // ref_genes = getGeneIndex(ref_file, "Symbol");
     ref_genes = getGeneIndex(ref_file);
     qry_genes = getGeneIndex(qry_file);
 
@@ -571,7 +573,19 @@ bool DataParser::loadQryMatrix()
 
         cout << "Qry shape: " << qry_height << " x " << qry_width << endl;
 
-        qry_data    = getDataset<float>(group, "data");
+        DataSet dataset(group.openDataSet("data"));
+        auto t = dataset.getFloatType();
+        byteSize = t.getSize();
+        if (byteSize == 4)
+        {
+            qry_data    = getDataset<float>(group, "data");
+        }
+        else if (byteSize == 8)
+        {
+            auto temp = getDataset<double>(group, "data");
+            std::copy(temp.begin(), temp.end(), std::back_inserter(qry_data));
+        }
+
         qry_indices = getDataset<int>(group, "indices");
         qry_indptr  = getDataset<int>(group, "indptr");
 

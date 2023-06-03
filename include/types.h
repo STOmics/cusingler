@@ -16,6 +16,8 @@ typedef unsigned short uint16;
 typedef unsigned int   uint32;
 typedef unsigned long  uint64;
 
+#define DEBUG
+
 struct InputData
 {
     vector<uint16> ref;  // expression matrix as reference, cell x gene

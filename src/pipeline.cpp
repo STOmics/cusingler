@@ -70,6 +70,17 @@ bool Pipeline::score()
 
     destroy_score();
 
+#ifdef DEBUG
+    ofstream ofs("temp_score.tsv");
+    for (uint32 i = 0; i < first_labels.size(); ++i)
+    {
+        for (uint32 j = 0; j < raw_data.ct_num; ++j)
+            ofs << raw_data.labels[i*raw_data.ct_num+j] << "\t";
+        ofs<<endl;
+    }
+    ofs.close();
+#endif
+
     cout << "score data cost time(s): " << timer.toc() << endl;
     return true;
 }

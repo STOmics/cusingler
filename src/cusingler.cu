@@ -1148,6 +1148,7 @@ vector<uint32> finetune_round(int qry_line, vector<uint32> top_labels,
             uniq_genes.insert(h_ctdiff.begin() + pos, h_ctdiff.begin() + pos + len);
         }
     }
+    //cout<<"uniq genes: "<<uniq_genes.size()<<endl;
     if (uniq_genes.size() < 20)
         return { top_labels.front() };
 
@@ -1264,8 +1265,9 @@ vector<uint32> finetune_round(int qry_line, vector<uint32> top_labels,
     float thre = *ele.second - 0.05;
     if (std::isnan(*ele.second))
     {
-        cerr << "Got score 'nan'" << endl;
-        exit(-1);
+        //cerr << "Got score 'nan'" << endl;
+        return {top_labels.front()};
+        //exit(-1);
     }
     vector<uint32> res;
     for (uint32 i = 0; i < scores.size(); ++i)
@@ -1297,12 +1299,17 @@ vector<uint32> cufinetune(const uint64 max_uniq_gene)
                 top_labels.push_back(pos);
         }
 
+        //cout<<"cell: "<<i<<" "<<top_labels.size()<<endl;
         while (top_labels.size() > 1)
         {
             top_labels = finetune_round(i, top_labels, max_uniq_gene);
         }
 
-        res.push_back(top_labels.front());
+        // TODO: why top labels can be empty
+        if (!top_labels.empty())
+            res.push_back(top_labels.front());
+        else
+            res.push_back(0);
         if (i != 0 && i % 1000 == 0)
         {
             cout << "processed " << i << " cells cost time(s): " << timer.toc() << endl;
