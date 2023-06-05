@@ -15,7 +15,7 @@ using namespace std;
 #include <CLI/CLI.hpp>
 
 constexpr auto APP_NAME    = "cusingler";
-constexpr auto APP_VERSION = "0.1";
+constexpr auto APP_VERSION = "1.0";
 
 int main(int argc, char** argv)
 {
