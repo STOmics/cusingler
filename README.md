@@ -64,7 +64,7 @@ make
 ## 输入文件要求
 
 * ref/qry输入文件均需有/X/data /X/indices /X/indptr 存储矩阵数据; 有/var/_index 存储基因名
-* ref需有 /obs/ClusterName/codes /obs/ClusterName/categories 存储分类结果
+* ref需有 /obs/ClusterName/codes /obs/ClusterName/categories 或/obs/celltype/codes /obs/celltype/categories 存储分类结果
 * qry需有 /obs/_index 存储细胞名
 
 * 程序不会对h5ad数据做log2处理,如有此需要请客户自行对数据做预处理
