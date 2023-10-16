@@ -135,6 +135,7 @@ setup(
     ext_modules=[CMakeExtension("cusingler")],
     cmdclass={"build_ext": CMakeBuild},
     zip_safe=False,
-    extras_require={"test": ["pytest>=6.0"]},
+    install_requires=["h5py"],
+    extras_require={"test": ["pytest>=6.0"], },
     python_requires=">=3.7",
 )

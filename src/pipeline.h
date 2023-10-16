@@ -17,19 +17,16 @@ using namespace std;
 class Pipeline
 {
 public:
-    Pipeline(string ref_file, string qry_file, string stat_file, int cores, int gpuid);
+    Pipeline(int cores, int gpuid);
     ~Pipeline(){};
 
-    bool train();
+    bool train(string ref_file, string qry_file);
     bool score();
     bool finetune();
-    bool dump();
+    bool dump(string stat_file);
 
-private:
+public:
     // Input parameters
-    string ref_file;
-    string qry_file;
-    string stat_file;
     int    cores;
     int    gpuid;
 
@@ -37,7 +34,26 @@ private:
     DataParser* data_parser;
 
     // Stat data
-    vector<char*>  cells;
+    vector<string>  cells;
     vector<string> first_labels;
     vector<string> final_labels;
+};
+
+class PyPipeline : public Pipeline
+{
+public:
+    PyPipeline(int cores, int gpuid);
+    ~PyPipeline(){};
+
+    bool train(uint32 ref_height, uint32 ref_width,
+        vector<float>& ref_data, vector<int>& ref_indices, vector<int>& ref_indptr,
+        uint32 qry_height, uint32 qry_width,
+        vector<float>& qry_data, vector<int>& qry_indices, vector<int>& qry_indptr,
+        vector<string>& codes, vector<int>& celltypes,
+        vector<string>& cellnames, vector<string>& ref_geneidx, vector<string>& qry_geneidx);
+    vector<vector<string>> dump();
+
+// public:
+//     PyDataParser* data_parser;
+
 };

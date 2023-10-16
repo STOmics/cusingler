@@ -16,14 +16,12 @@
 #include <thread>
 using namespace std;
 
-Pipeline::Pipeline(string ref_file, string qry_file, string stat_file, int cores,
-                   int gpuid)
-    : ref_file(ref_file), qry_file(qry_file), stat_file(stat_file), cores(cores),
-      gpuid(gpuid)
+Pipeline::Pipeline(int cores, int gpuid)
+    : cores(cores), gpuid(gpuid)
 {
 }
 
-bool Pipeline::train()
+bool Pipeline::train(string ref_file, string qry_file)
 {
     if (!initGPU(gpuid))
     {
@@ -34,7 +32,8 @@ bool Pipeline::train()
     cout << "start training ref data." << endl;
     Timer timer;
 
-    data_parser = new DataParser(ref_file, qry_file, cores);
+    data_parser = new DataParser(cores);
+    data_parser->prepareData(ref_file, qry_file);
     data_parser->findIntersectionGenes();
     data_parser->loadRefData();
     data_parser->trainData();
@@ -48,6 +47,7 @@ bool Pipeline::train()
 bool Pipeline::score()
 {
     cout << "start get labels." << endl;
+
     Timer timer;
 
     uint64 max_uniq_gene = 0;
@@ -110,7 +110,7 @@ bool Pipeline::finetune()
     return true;
 }
 
-bool Pipeline::dump()
+bool Pipeline::dump(string stat_file)
 {
     ofstream ofs(stat_file);
     ofs << "cell\tfirstLabel\tfinalLabel\n";
@@ -118,4 +118,47 @@ bool Pipeline::dump()
         ofs << cells[i] << "\t" << first_labels[i] << "\t" << final_labels[i] << endl;
     ofs.close();
     return true;
+}
+
+PyPipeline::PyPipeline(int cores, int gpuid)
+    : Pipeline(cores, gpuid)
+{
+}
+
+bool PyPipeline::train(uint32 ref_height, uint32 ref_width,
+    vector<float>& ref_data, vector<int>& ref_indices, vector<int>& ref_indptr,
+    uint32 qry_height, uint32 qry_width,
+    vector<float>& qry_data, vector<int>& qry_indices, vector<int>& qry_indptr,
+    vector<string>& codes, vector<int>& celltypes,
+    vector<string>& cellnames, vector<string>& ref_geneidx, vector<string>& qry_geneidx)
+{
+    if (!initGPU(gpuid))
+    {
+        cerr << "Fail to initlize gpu with id: " << gpuid << endl;
+        exit(-1);
+    }
+
+    cout << "start training ref data." << endl;
+    Timer timer;
+
+    data_parser = new PyDataParser(cores);
+    data_parser->prepareData(ref_height, ref_width, ref_data, ref_indices, ref_indptr,
+        qry_height, qry_width, qry_data, qry_indices, qry_indptr,
+        codes, celltypes, cellnames, ref_geneidx, qry_geneidx);
+    data_parser->findIntersectionGenes();
+    data_parser->loadRefData();
+    data_parser->trainData();
+    data_parser->loadQryData();
+    data_parser->preprocess();
+    cout << "train data cost time(s): " << timer.toc() << endl;
+
+    return true;
+}
+
+vector<vector<string>> PyPipeline::dump()
+{
+    vector<vector<string>> res;
+    for (uint32 i = 0; i < final_labels.size(); ++i)
+        res.push_back({cells[i], first_labels[i], final_labels[i]});
+    return res;
 }

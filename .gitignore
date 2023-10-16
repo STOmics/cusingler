@@ -4,3 +4,5 @@ install/
 settings.json
 .vscode/
 *.egg-info
+.eggs/
+dist/

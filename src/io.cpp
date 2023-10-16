@@ -38,7 +38,7 @@ template <typename T> vector<T> getDataset(Group& group, string name)
     return data;
 }
 
-bool DataParser::loadRefMatrix()
+bool DataParser::loadRefMatrix(string ref_file)
 {
     // Open h5 file handle
     H5File* file = new H5File(ref_file.c_str(), H5F_ACC_RDONLY);
@@ -110,16 +110,10 @@ bool DataParser::loadRefMatrix()
                 if (m.count(s) == 0)
                 {
                     m[s] = m.size();
+                    char* t = strdup(s);
+                    uniq_celltypes.push_back(t);
                 }
-            }
-            for (auto& s : temp)
-            {
                 celltype_codes.push_back(m[s]);
-            }
-            for (auto [s, _] : m)
-            {
-                char* t = strdup(s.data());
-                uniq_celltypes.push_back(t);
             }
             label_num = uniq_celltypes.size();
         }
@@ -132,7 +126,8 @@ bool DataParser::loadRefMatrix()
         if (!is_dataset)
         {
             celltype_codes = getDataset<uint8>(group, "codes");
-            uniq_celltypes = getDataset<char*>(group, "categories");
+            auto temp = getDataset<char*>(group, "categories");
+            std::copy(temp.begin(), temp.end(), std::back_inserter(uniq_celltypes));
             label_num      = uniq_celltypes.size();
         }
     }
@@ -262,13 +257,26 @@ bool DataParser::trainData()
     return true;
 }
 
-DataParser::DataParser(string ref_file, string qry_file, int thread_num)
-    : ref_file(ref_file), qry_file(qry_file), thread_num(thread_num)
+DataParser::DataParser(int thread_num)
+    : thread_num(thread_num)
 {
     filter_genes = false;
 }
 
-vector<char*> DataParser::getGeneIndex(string filename, string gene_index = "")
+bool DataParser::prepareData(string ref_file, string qry_file)
+{
+    ref_genes = getGeneIndex(ref_file, "");
+    qry_genes = getGeneIndex(qry_file, "");
+
+    // Load raw data from h5 file
+    loadRefMatrix(ref_file);
+    loadQryMatrix(qry_file);
+
+    return true;
+}
+
+
+vector<string> DataParser::getGeneIndex(string filename, string gene_index = "")
 {
     H5File* file = new H5File(filename.c_str(), H5F_ACC_RDONLY);
     auto    group(file->openGroup("/var"));
@@ -281,7 +289,10 @@ vector<char*> DataParser::getGeneIndex(string filename, string gene_index = "")
         if (gene_index == "Gene_ID")
             gene_index = "Symbol";
     }
-    auto res = getDataset<char*>(group, gene_index.c_str());
+    auto temp = getDataset<char*>(group, gene_index.c_str());
+    vector<string> res;
+    std::copy(temp.begin(), temp.end(), std::back_inserter(res));
+
 
     delete file;
     return res;
@@ -289,12 +300,6 @@ vector<char*> DataParser::getGeneIndex(string filename, string gene_index = "")
 
 bool DataParser::findIntersectionGenes()
 {
-    vector<char*> ref_genes, qry_genes;
-    ref_genes = getGeneIndex(ref_file);
-    qry_genes = getGeneIndex(qry_file);
-
-    genes = ref_genes;
-
     set<string> ref_uniq_genes(ref_genes.begin(), ref_genes.end());
     set<string> qry_uniq_genes(qry_genes.begin(), qry_genes.end());
 
@@ -340,9 +345,7 @@ bool DataParser::findIntersectionGenes()
 
 bool DataParser::loadRefData()
 {
-    // Load raw data from h5 file
-    loadRefMatrix();
-
+    
     // Logarithmize the data matrix
     // std::transform(ref_data.begin(), ref_data.end(), ref_data.begin(), [](float f){
     // return log2(f+1);});
@@ -516,8 +519,7 @@ bool DataParser::csrFilter(vector<float>& data, vector<int>& indptr, vector<int>
 
 bool DataParser::loadQryData()
 {
-    loadQryMatrix();
-
+    
     // Logarithmize the data matrix
     // std::transform(qry_data.begin(), qry_data.end(), qry_data.begin(), [](float f){
     // return log2(f+1);});
@@ -530,7 +532,7 @@ bool DataParser::loadQryData()
     return true;
 }
 
-bool DataParser::loadQryMatrix()
+bool DataParser::loadQryMatrix(string qry_file)
 {
     // Open h5 file handle
     H5File* file = new H5File(qry_file.c_str(), H5F_ACC_RDONLY);
@@ -596,7 +598,8 @@ bool DataParser::loadQryMatrix()
     // Load per cell names
     {
         auto group(file->openGroup("/obs"));
-        qry_cellnames = getDataset<char*>(group, "_index");
+        auto temp = getDataset<char*>(group, "_index");
+        std::copy(temp.begin(), temp.end(), std::back_inserter(qry_cellnames));
     }
 
     // clear resources
@@ -771,6 +774,43 @@ bool DataParser::generateDenseMatrix(int step, uint64& max_uniq_gene)
 
     cout << "qry data shape: " << qry_height << " x " << qry_width
          << " non-zero number: " << qry_data.size() << endl;
+
+    return true;
+}
+
+PyDataParser::PyDataParser(int thread_num) : 
+    DataParser(thread_num)
+{
+
+}
+
+bool PyDataParser::prepareData(uint32 ref_height_, uint32 ref_width_,
+        vector<float>& ref_data_, vector<int>& ref_indices_, vector<int>& ref_indptr_,
+        uint32 qry_height_, uint32 qry_width_,
+        vector<float>& qry_data_, vector<int>& qry_indices_, vector<int>& qry_indptr_,
+        vector<string>& codes_, vector<int>& celltypes_,
+        vector<string>& cellnames_, vector<string>& ref_geneidx_, vector<string>& qry_geneidx_)
+{
+    ref_height = ref_height_;
+    ref_width = ref_width_;
+    ref_data = ref_data_;
+    ref_indices = ref_indices_;
+    ref_indptr = ref_indptr_;
+
+    qry_height = qry_height_;
+    qry_width = qry_width_;
+    qry_data = qry_data_;
+    qry_indices = qry_indices_;
+    qry_indptr = qry_indptr_;
+
+    uniq_celltypes = codes_;
+    // celltype_codes = celltypes_;
+    std::copy(celltypes_.begin(), celltypes_.end(), std::back_inserter(celltype_codes));
+    label_num      = uniq_celltypes.size();
+
+    qry_cellnames = cellnames_;
+    ref_genes = ref_geneidx_;
+    qry_genes = qry_geneidx_;
 
     return true;
 }

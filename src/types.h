@@ -29,7 +29,7 @@ struct InputData
     vector<uint16> qry_data;
     vector<int>    qry_indptr, qry_indices;
     uint32         qry_height, qry_width;
-    vector<char*>  qry_cellnames;
+    vector<string>  qry_cellnames;
 
     vector<float>  labels;     // initial annotated cell types, cell x celltype
     vector<string> celltypes;  // celltypes order
