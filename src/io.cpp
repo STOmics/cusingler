@@ -17,123 +17,123 @@
 #include <vector>
 using namespace std;
 
-#include "H5Cpp.h"
-using namespace H5;
+// #include "H5Cpp.h"
+// using namespace H5;
 
-template <typename T> vector<T> getDataset(Group& group, string name)
-{
-    auto dataset   = DataSet(group.openDataSet(name.c_str()));
-    auto datatype  = dataset.getDataType();
-    auto dataspace = dataset.getSpace();
-    int  rank      = dataspace.getSimpleExtentNdims();
-    // hsize_t dims[rank];
-    vector<hsize_t> dims(rank);
-    dataspace.getSimpleExtentDims(&dims[0], NULL);
+// template <typename T> vector<T> getDataset(Group& group, string name)
+// {
+//     auto dataset   = DataSet(group.openDataSet(name.c_str()));
+//     auto datatype  = dataset.getDataType();
+//     auto dataspace = dataset.getSpace();
+//     int  rank      = dataspace.getSimpleExtentNdims();
+//     // hsize_t dims[rank];
+//     vector<hsize_t> dims(rank);
+//     dataspace.getSimpleExtentDims(&dims[0], NULL);
 
-    uint64    size = dims[0];
-    vector<T> data;
-    data.resize(size);
-    dataset.read(data.data(), datatype);
+//     uint64    size = dims[0];
+//     vector<T> data;
+//     data.resize(size);
+//     dataset.read(data.data(), datatype);
 
-    return data;
-}
+//     return data;
+// }
 
 bool DataParser::loadRefMatrix(string ref_file)
 {
-    // Open h5 file handle
-    H5File* file = new H5File(ref_file.c_str(), H5F_ACC_RDONLY);
+//     // Open h5 file handle
+//     H5File* file = new H5File(ref_file.c_str(), H5F_ACC_RDONLY);
 
-    // Load matrix data and shape
-    {
-        auto group(file->openGroup("/X"));
+//     // Load matrix data and shape
+//     {
+//         auto group(file->openGroup("/X"));
 
-        Attribute attr(group.openAttribute("shape"));
-        auto      datatype = attr.getIntType();
-        size_t    byteSize = datatype.getSize();
-        if (byteSize == 1)
-        {
-            vector<uint8> shapes(2, 0);
-            attr.read(datatype, shapes.data());
-            ref_height = shapes[0];
-            ref_width  = shapes[1];
-        }
-        else if (byteSize == 2)
-        {
-            vector<uint16> shapes(2, 0);
-            attr.read(datatype, shapes.data());
-            ref_height = shapes[0];
-            ref_width  = shapes[1];
-        }
-        else if (byteSize == 4)
-        {
-            vector<uint32> shapes(2, 0);
-            attr.read(datatype, shapes.data());
-            ref_height = shapes[0];
-            ref_width  = shapes[1];
-        }
-        else if (byteSize == 8)
-        {
-            vector<uint64> shapes(2, 0);
-            attr.read(datatype, shapes.data());
-            ref_height = shapes[0];
-            ref_width  = shapes[1];
-        }
+//         Attribute attr(group.openAttribute("shape"));
+//         auto      datatype = attr.getIntType();
+//         size_t    byteSize = datatype.getSize();
+//         if (byteSize == 1)
+//         {
+//             vector<uint8> shapes(2, 0);
+//             attr.read(datatype, shapes.data());
+//             ref_height = shapes[0];
+//             ref_width  = shapes[1];
+//         }
+//         else if (byteSize == 2)
+//         {
+//             vector<uint16> shapes(2, 0);
+//             attr.read(datatype, shapes.data());
+//             ref_height = shapes[0];
+//             ref_width  = shapes[1];
+//         }
+//         else if (byteSize == 4)
+//         {
+//             vector<uint32> shapes(2, 0);
+//             attr.read(datatype, shapes.data());
+//             ref_height = shapes[0];
+//             ref_width  = shapes[1];
+//         }
+//         else if (byteSize == 8)
+//         {
+//             vector<uint64> shapes(2, 0);
+//             attr.read(datatype, shapes.data());
+//             ref_height = shapes[0];
+//             ref_width  = shapes[1];
+//         }
 
-        cout << "Ref shape: " << ref_height << " x " << ref_width << endl;
+//         cout << "Ref shape: " << ref_height << " x " << ref_width << endl;
 
-        ref_data    = getDataset<float>(group, "data");
-        ref_indices = getDataset<int>(group, "indices");
-        ref_indptr  = getDataset<int>(group, "indptr");
-    }
+//         ref_data    = getDataset<float>(group, "data");
+//         ref_indices = getDataset<int>(group, "indices");
+//         ref_indptr  = getDataset<int>(group, "indptr");
+//     }
 
-    // Load celltypes of per cell
-    {
-        bool  is_dataset = false;
-        Group group;
-        if (file->nameExists("/obs/celltype"))
-        {
-            group = file->openGroup("/obs/celltype");
-        }
-        else if (file->nameExists("/obs/ClusterName"))
-        {
-            group = file->openGroup("/obs/ClusterName");
-        }
-        else if (file->nameExists("/obsm/annotation_au/celltype"))
-        {
-            is_dataset = true;
+//     // Load celltypes of per cell
+//     {
+//         bool  is_dataset = false;
+//         Group group;
+//         if (file->nameExists("/obs/celltype"))
+//         {
+//             group = file->openGroup("/obs/celltype");
+//         }
+//         else if (file->nameExists("/obs/ClusterName"))
+//         {
+//             group = file->openGroup("/obs/ClusterName");
+//         }
+//         else if (file->nameExists("/obsm/annotation_au/celltype"))
+//         {
+//             is_dataset = true;
 
-            group                   = file->openGroup("/obsm/annotation_au");
-            auto               temp = getDataset<char*>(group, "celltype");
-            map<string, uint8> m;
-            for (auto s : temp)
-            {
-                if (m.count(s) == 0)
-                {
-                    m[s] = m.size();
-                    char* t = strdup(s);
-                    uniq_celltypes.push_back(t);
-                }
-                celltype_codes.push_back(m[s]);
-            }
-            label_num = uniq_celltypes.size();
-        }
-        else
-        {
-            cerr << "Fail to load celltypes of reference file." << endl;
-            exit(-1);
-        }
+//             group                   = file->openGroup("/obsm/annotation_au");
+//             auto               temp = getDataset<char*>(group, "celltype");
+//             map<string, uint8> m;
+//             for (auto s : temp)
+//             {
+//                 if (m.count(s) == 0)
+//                 {
+//                     m[s] = m.size();
+//                     char* t = strdup(s);
+//                     uniq_celltypes.push_back(t);
+//                 }
+//                 celltype_codes.push_back(m[s]);
+//             }
+//             label_num = uniq_celltypes.size();
+//         }
+//         else
+//         {
+//             cerr << "Fail to load celltypes of reference file." << endl;
+//             exit(-1);
+//         }
 
-        if (!is_dataset)
-        {
-            celltype_codes = getDataset<uint8>(group, "codes");
-            auto temp = getDataset<char*>(group, "categories");
-            std::copy(temp.begin(), temp.end(), std::back_inserter(uniq_celltypes));
-            label_num      = uniq_celltypes.size();
-        }
-    }
+//         if (!is_dataset)
+//         {
+//             celltype_codes = getDataset<uint8>(group, "codes");
+//             auto temp = getDataset<char*>(group, "categories");
+//             std::copy(temp.begin(), temp.end(), std::back_inserter(uniq_celltypes));
+//             label_num      = uniq_celltypes.size();
+//         }
+//     }
 
-    // clear resources
-    delete file;
+//     // clear resources
+//     delete file;
 
     return true;
 }
@@ -265,12 +265,12 @@ DataParser::DataParser(int thread_num)
 
 bool DataParser::prepareData(string ref_file, string qry_file)
 {
-    ref_genes = getGeneIndex(ref_file, "");
-    qry_genes = getGeneIndex(qry_file, "");
+    // ref_genes = getGeneIndex(ref_file, "");
+    // qry_genes = getGeneIndex(qry_file, "");
 
-    // Load raw data from h5 file
-    loadRefMatrix(ref_file);
-    loadQryMatrix(qry_file);
+    // // Load raw data from h5 file
+    // loadRefMatrix(ref_file);
+    // loadQryMatrix(qry_file);
 
     return true;
 }
@@ -278,24 +278,25 @@ bool DataParser::prepareData(string ref_file, string qry_file)
 
 vector<string> DataParser::getGeneIndex(string filename, string gene_index = "")
 {
-    H5File* file = new H5File(filename.c_str(), H5F_ACC_RDONLY);
-    auto    group(file->openGroup("/var"));
-    if (gene_index.empty())
-    {
-        Attribute attr(group.openAttribute("_index"));
-        auto      datatype = attr.getDataType();
-        attr.read(datatype, gene_index);
-        // FIXME: not robust
-        if (gene_index == "Gene_ID")
-            gene_index = "Symbol";
-    }
-    auto temp = getDataset<char*>(group, gene_index.c_str());
-    vector<string> res;
-    std::copy(temp.begin(), temp.end(), std::back_inserter(res));
+    // H5File* file = new H5File(filename.c_str(), H5F_ACC_RDONLY);
+    // auto    group(file->openGroup("/var"));
+    // if (gene_index.empty())
+    // {
+    //     Attribute attr(group.openAttribute("_index"));
+    //     auto      datatype = attr.getDataType();
+    //     attr.read(datatype, gene_index);
+    //     // FIXME: not robust
+    //     if (gene_index == "Gene_ID")
+    //         gene_index = "Symbol";
+    // }
+    // auto temp = getDataset<char*>(group, gene_index.c_str());
+    // vector<string> res;
+    // std::copy(temp.begin(), temp.end(), std::back_inserter(res));
 
 
-    delete file;
-    return res;
+    // delete file;
+    // return res;
+    return {};
 }
 
 bool DataParser::findIntersectionGenes()
@@ -534,76 +535,76 @@ bool DataParser::loadQryData()
 
 bool DataParser::loadQryMatrix(string qry_file)
 {
-    // Open h5 file handle
-    H5File* file = new H5File(qry_file.c_str(), H5F_ACC_RDONLY);
+    // // Open h5 file handle
+    // H5File* file = new H5File(qry_file.c_str(), H5F_ACC_RDONLY);
 
-    // Load matrix data and shape
-    {
-        auto group(file->openGroup("/X"));
+    // // Load matrix data and shape
+    // {
+    //     auto group(file->openGroup("/X"));
 
-        Attribute attr(group.openAttribute("shape"));
-        auto      datatype = attr.getIntType();
-        size_t    byteSize = datatype.getSize();
-        if (byteSize == 1)
-        {
-            vector<uint8> shapes(2, 0);
-            attr.read(datatype, shapes.data());
-            qry_height = shapes[0];
-            qry_width  = shapes[1];
-        }
-        else if (byteSize == 2)
-        {
-            vector<uint16> shapes(2, 0);
-            attr.read(datatype, shapes.data());
-            qry_height = shapes[0];
-            qry_width  = shapes[1];
-        }
-        else if (byteSize == 4)
-        {
-            vector<uint32> shapes(2, 0);
-            attr.read(datatype, shapes.data());
-            qry_height = shapes[0];
-            qry_width  = shapes[1];
-        }
-        else if (byteSize == 8)
-        {
-            vector<uint64> shapes(2, 0);
-            attr.read(datatype, shapes.data());
-            qry_height = shapes[0];
-            qry_width  = shapes[1];
-        }
+    //     Attribute attr(group.openAttribute("shape"));
+    //     auto      datatype = attr.getIntType();
+    //     size_t    byteSize = datatype.getSize();
+    //     if (byteSize == 1)
+    //     {
+    //         vector<uint8> shapes(2, 0);
+    //         attr.read(datatype, shapes.data());
+    //         qry_height = shapes[0];
+    //         qry_width  = shapes[1];
+    //     }
+    //     else if (byteSize == 2)
+    //     {
+    //         vector<uint16> shapes(2, 0);
+    //         attr.read(datatype, shapes.data());
+    //         qry_height = shapes[0];
+    //         qry_width  = shapes[1];
+    //     }
+    //     else if (byteSize == 4)
+    //     {
+    //         vector<uint32> shapes(2, 0);
+    //         attr.read(datatype, shapes.data());
+    //         qry_height = shapes[0];
+    //         qry_width  = shapes[1];
+    //     }
+    //     else if (byteSize == 8)
+    //     {
+    //         vector<uint64> shapes(2, 0);
+    //         attr.read(datatype, shapes.data());
+    //         qry_height = shapes[0];
+    //         qry_width  = shapes[1];
+    //     }
 
-        cout << "Qry shape: " << qry_height << " x " << qry_width << endl;
+    //     cout << "Qry shape: " << qry_height << " x " << qry_width << endl;
 
-        DataSet dataset(group.openDataSet("data"));
-        auto t = dataset.getFloatType();
-        byteSize = t.getSize();
-        if (byteSize == 4)
-        {
-            qry_data    = getDataset<float>(group, "data");
-        }
-        else if (byteSize == 8)
-        {
-            auto temp = getDataset<double>(group, "data");
-            std::copy(temp.begin(), temp.end(), std::back_inserter(qry_data));
-        }
+    //     DataSet dataset(group.openDataSet("data"));
+    //     auto t = dataset.getFloatType();
+    //     byteSize = t.getSize();
+    //     if (byteSize == 4)
+    //     {
+    //         qry_data    = getDataset<float>(group, "data");
+    //     }
+    //     else if (byteSize == 8)
+    //     {
+    //         auto temp = getDataset<double>(group, "data");
+    //         std::copy(temp.begin(), temp.end(), std::back_inserter(qry_data));
+    //     }
 
-        qry_indices = getDataset<int>(group, "indices");
-        qry_indptr  = getDataset<int>(group, "indptr");
+    //     qry_indices = getDataset<int>(group, "indices");
+    //     qry_indptr  = getDataset<int>(group, "indptr");
 
-        // set<float> m(qry_data.begin(), qry_data.end());
-        // cout<<"qry data uniq elements: "<<m.size()<<endl;
-    }
+    //     // set<float> m(qry_data.begin(), qry_data.end());
+    //     // cout<<"qry data uniq elements: "<<m.size()<<endl;
+    // }
 
-    // Load per cell names
-    {
-        auto group(file->openGroup("/obs"));
-        auto temp = getDataset<char*>(group, "_index");
-        std::copy(temp.begin(), temp.end(), std::back_inserter(qry_cellnames));
-    }
+    // // Load per cell names
+    // {
+    //     auto group(file->openGroup("/obs"));
+    //     auto temp = getDataset<char*>(group, "_index");
+    //     std::copy(temp.begin(), temp.end(), std::back_inserter(qry_cellnames));
+    // }
 
-    // clear resources
-    delete file;
+    // // clear resources
+    // delete file;
 
     return true;
 }

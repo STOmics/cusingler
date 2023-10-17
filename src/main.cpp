@@ -13,14 +13,14 @@ using namespace std;
 
 namespace py = pybind11;
 
-void cusingler(string& ref_h5, string& qry_h5, string& stat_file, int cores, int gpuid)
-{
-    Pipeline pipeline = Pipeline(cores, gpuid);
-    pipeline.train(ref_h5, qry_h5);
-    pipeline.score();
-    pipeline.finetune();
-    pipeline.dump(stat_file);
-}
+// void cusingler(string& ref_h5, string& qry_h5, string& stat_file, int cores, int gpuid)
+// {
+//     Pipeline pipeline = Pipeline(cores, gpuid);
+//     pipeline.train(ref_h5, qry_h5);
+//     pipeline.score();
+//     pipeline.finetune();
+//     pipeline.dump(stat_file);
+// }
 
 vector<vector<string>> run(int cores, int gpuid, uint32 ref_height, uint32 ref_width,
     vector<float>& ref_data, vector<int>& ref_indices, vector<int>& ref_indptr,
@@ -56,7 +56,7 @@ PYBIND11_MODULE(cusingler, m) {
            cusingler
     )pbdoc";
 
-    m.def("cusingler", &cusingler, "cusingler function");
+    // m.def("cusingler", &cusingler, "cusingler function");
     m.def("run", &run, "test function");
 
 #ifdef VERSION_INFO
