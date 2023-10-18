@@ -132,7 +132,7 @@ setup(
     author_email="zhaofuxiang@genomics.cn",
     description="Accelerate cell annotation in SingleR by GPU",
     long_description="",
-    ext_modules=[CMakeExtension("cusingler")],
+    ext_modules=[CMakeExtension("cusingler.")],
     cmdclass={"build_ext": CMakeBuild},
     zip_safe=False,
     install_requires=["h5py"],

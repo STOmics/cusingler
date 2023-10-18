@@ -420,7 +420,7 @@ bool DataParser::csr2dense(vector<float>& data, vector<int>& indptr, vector<int>
                 }
             }
 
-            curr_uniq_gene = max(uniq.size() + 1, curr_uniq_gene);
+            curr_uniq_gene = std::max<uint64>(uniq.size() + 1, curr_uniq_gene);
 
             vector<float>                order(uniq.begin(), uniq.end());
             unordered_map<float, uint16> index;
@@ -495,7 +495,7 @@ bool DataParser::csrFilter(vector<float>& data, vector<int>& indptr, vector<int>
                 uniq.insert(data[i]);
             }
         }
-        curr_uniq_gene = max(uniq.size() + 1, curr_uniq_gene);
+        curr_uniq_gene = std::max<uint64>(uniq.size() + 1, curr_uniq_gene);
         vector<float>                order(uniq.begin(), uniq.end());
         unordered_map<float, uint16> index;
         for (uint16 i = 0; i < order.size(); ++i)

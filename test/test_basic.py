@@ -1,7 +1,7 @@
 import sys
 
 import h5py
-import cusingler
+from cusingler import cusingler
 import numpy as np
 
 def load_matrix(filename):

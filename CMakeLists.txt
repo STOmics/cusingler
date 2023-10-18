@@ -7,7 +7,7 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     set(CMAKE_CUDA_ARCHITECTURES 75)
 endif()
 
-set(CMAKE_CXX_STANDARD 11 CACHE STRING "C++ version selection")
+set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ version selection")
 
 add_subdirectory(pybind11)
 pybind11_add_module(cusingler 
@@ -18,7 +18,7 @@ pybind11_add_module(cusingler
 )
 
 
-target_link_libraries(cusingler PUBLIC hdf5 hdf5_cpp cudart)
+target_link_libraries(cusingler PRIVATE cudart_static.lib)
 
 # EXAMPLE_VERSION_INFO is defined by setup.py and passed into the C++ code as a
 # define (VERSION_INFO) here.

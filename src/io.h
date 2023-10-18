@@ -35,7 +35,7 @@ public:
         uint32 qry_height_, uint32 qry_width_,
         vector<float>& qry_data_, vector<int>& qry_indices_, vector<int>& qry_indptr_,
         vector<string>& codes_, vector<int>& celltypes_,
-        vector<string>& cellnames_, vector<string>& ref_geneidx_, vector<string>& qry_geneidx_) {}
+        vector<string>& cellnames_, vector<string>& ref_geneidx_, vector<string>& qry_geneidx_) {return true;}
 
 private:
     bool loadRefMatrix(string filename);
