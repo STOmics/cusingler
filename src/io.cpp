@@ -210,10 +210,14 @@ bool DataParser::trainData()
     size_t thre_gene_n   = round(500 * pow((2 / 3.0), log2(2)));
 
     vector<int> my_scores;
-    for (auto& [k1, v1] : median_map)
+    for (auto& tmp1 : median_map)
     {
-        for (auto& [k2, v2] : median_map)
+        auto& k1 = tmp1.first;
+        auto& v1 = tmp1.second;
+        for (auto& tmp2 : median_map)
         {
+            auto& k2 = tmp2.first;
+            auto& v2 = tmp2.second;
             if (k1 == k2)
             {
                 // padding zero
