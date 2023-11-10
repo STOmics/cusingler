@@ -1317,10 +1317,10 @@ vector<uint32> cufinetune(const uint64 max_uniq_gene, float quantile, float fine
             res.push_back(top_labels.front());
         else
             res.push_back(0);
-        if (i != 0 && i % 1000 == 0)
-        {
-            cout << "processed " << i << " cells cost time(s): " << timer.toc() << endl;
-        }
+        // if (i != 0 && i % 1000 == 0)
+        // {
+        //     cout << "processed " << i << " cells cost time(s): " << timer.toc() << endl;
+        // }
     }
 
     return res;

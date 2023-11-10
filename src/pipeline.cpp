@@ -29,7 +29,7 @@ bool Pipeline::train(string ref_file, string qry_file)
         exit(-1);
     }
 
-    cout << "start training ref data." << endl;
+    // cout << "start training ref data." << endl;
     Timer timer;
 
     data_parser = new DataParser(cores);
@@ -46,13 +46,13 @@ bool Pipeline::train(string ref_file, string qry_file)
 
 bool Pipeline::score(float quantile, float finetune_thre)
 {
-    cout << "start get labels." << endl;
+    // cout << "start get labels." << endl;
 
     Timer timer;
 
     uint64 max_uniq_gene = 0;
     data_parser->generateDenseMatrix(0, max_uniq_gene);
-    cout << "max uniq gene: " << max_uniq_gene << endl;
+    // cout << "max uniq gene: " << max_uniq_gene << endl;
     auto& raw_data = data_parser->raw_data;
     raw_data.labels.clear();
     raw_data.labels.resize(raw_data.qry_height * raw_data.ct_num, 0);
@@ -87,12 +87,12 @@ bool Pipeline::score(float quantile, float finetune_thre)
 
 bool Pipeline::finetune(float quantile, float finetune_thre, int finetune_times)
 {
-    cout << "start finetune." << endl;
+    // cout << "start finetune." << endl;
     Timer timer("s");
 
     uint64 max_uniq_gene = 0;
     data_parser->generateDenseMatrix(1, max_uniq_gene);
-    cout << "max uniq gene: " << max_uniq_gene << endl;
+    // cout << "max uniq gene: " << max_uniq_gene << endl;
 
     auto& raw_data = data_parser->raw_data;
 
@@ -138,7 +138,7 @@ bool PyPipeline::train(uint32 ref_height, uint32 ref_width,
         exit(-1);
     }
 
-    cout << "start training ref data." << endl;
+    // cout << "start training ref data." << endl;
     Timer timer;
 
     data_parser = new PyDataParser(cores);
