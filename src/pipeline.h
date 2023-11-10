@@ -21,8 +21,8 @@ public:
     ~Pipeline(){};
 
     bool train(string ref_file, string qry_file);
-    bool score();
-    bool finetune();
+    bool score(float quantile, float finetune_thre);
+    bool finetune(float quantile, float finetune_thre, int finetune_times);
     bool dump(string stat_file);
 
 public:

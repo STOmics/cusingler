@@ -4,7 +4,7 @@
 
 ## 编译whl
 
-系统环境需要安装 cuda-toolkit 11.4
+系统环境需要安装 cuda-toolkit 11.4 / gcc<11
 
 ```sh
 export PATH=/usr/local/cuda/bin:$PATH

@@ -44,7 +44,7 @@ bool Pipeline::train(string ref_file, string qry_file)
     return true;
 }
 
-bool Pipeline::score()
+bool Pipeline::score(float quantile, float finetune_thre)
 {
     cout << "start get labels." << endl;
 
@@ -64,7 +64,7 @@ bool Pipeline::score()
         exit(-1);
     }
 
-    auto first_label_index = get_label(raw_data, max_uniq_gene, cores);
+    auto first_label_index = get_label(raw_data, max_uniq_gene, cores, quantile, finetune_thre);
     for (auto& i : first_label_index)
         first_labels.push_back(raw_data.celltypes[i]);
 
@@ -85,7 +85,7 @@ bool Pipeline::score()
     return true;
 }
 
-bool Pipeline::finetune()
+bool Pipeline::finetune(float quantile, float finetune_thre, int finetune_times)
 {
     cout << "start finetune." << endl;
     Timer timer("s");
@@ -100,7 +100,7 @@ bool Pipeline::finetune()
     {
         exit(-1);
     }
-    auto res = cufinetune(max_uniq_gene);
+    auto res = cufinetune(max_uniq_gene, quantile, finetune_thre, finetune_times);
     for (auto& c : res)
         final_labels.push_back(raw_data.celltypes[c]);
 

@@ -67,7 +67,7 @@ def main(ref_file, qry_file, out_file):
     res = cusingler.run(cores, gpuid, ref_height, ref_width, ref_data, ref_indices, ref_indptr,
                   qry_height, qry_width, qry_data, qry_indices, qry_indptr,
                   codes, celltypes,
-                  cellnames, ref_geneidx, qry_geneidx)
+                  cellnames, ref_geneidx, qry_geneidx, quantile=80, finetune_thre=0.05, finetune_times=0)
     arr = np.array(res)
     np.savetxt(out_file, arr, delimiter='\t', header='cell\tfirstLabel\tfinalLabel',  
                 comments="", fmt='%s')

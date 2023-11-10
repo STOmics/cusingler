@@ -977,7 +977,7 @@ inline bool bincount(const uint64 max_uniq_gene)
     return max_uniq_gene <= min(1024, shared_mem_per_block / 8);
 }
 
-vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
+vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores, float quantile, float finetune_thre)
 {
     vector<float> res_scores(qry_height * ct_num, 0);
     vector<int>   res_labels(qry_height, 0);
@@ -1096,7 +1096,7 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
 
                         vector<float> tmp(score.begin() + start,
                                           score.begin() + tmp_total_len);
-                        float         p = percentile(tmp, len, 0.8);
+                        float         p = percentile(tmp, len, quantile);
                         res_scores[(q_start + line + i) * ct_num + start_ct + j] = p;
                         start += len;
                     }
@@ -1116,7 +1116,7 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
         const auto& scores = res_scores.begin() + i * ct_num;
         auto        ele    = std::minmax_element(scores, scores + ct_num);
         res_labels[i]      = (ele.second - scores);
-        float thre         = *ele.second - 0.05;  // max-0.05
+        float thre         = *ele.second - finetune_thre;
         for (int j = 0; j < ct_num; ++j)
         {
             if (*(scores + j) >= thre)
@@ -1130,7 +1130,7 @@ vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores)
 }
 
 vector<uint32> finetune_round(int qry_line, vector<uint32> top_labels,
-                              const uint64 max_uniq_gene)
+                              const uint64 max_uniq_gene, float quantile, float finetune_thre)
 {
     set<uint32> uniq_genes;
     int         gene_thre = round(500 * pow((2 / 3.0), log2(top_labels.size())));
@@ -1256,13 +1256,13 @@ vector<uint32> finetune_round(int qry_line, vector<uint32> top_labels,
         total_len += len;
 
         vector<float> tmp(h_score.begin() + start, h_score.begin() + total_len);
-        float         score = percentile(tmp, len, 0.8);
+        float         score = percentile(tmp, len, quantile);
         scores.push_back(score);
         start += len;
     }
 
     auto  ele  = std::minmax_element(scores.begin(), scores.end());
-    float thre = *ele.second - 0.05;
+    float thre = *ele.second - finetune_thre;
     if (std::isnan(*ele.second))
     {
         //cerr << "Got score 'nan'" << endl;
@@ -1275,14 +1275,20 @@ vector<uint32> finetune_round(int qry_line, vector<uint32> top_labels,
         if (scores[i] <= *ele.first || scores[i] < thre)
             continue;
         else
-            res.push_back(top_labels[i]);
+        {
+            // Make sure the first element has the maximium score
+            if (scores[i] == *ele.second)
+                res.insert(res.begin(), top_labels[i]);
+            else
+                res.push_back(top_labels[i]);
+        }
     }
     if (res.empty())
         res.push_back(top_labels.front());
 
     return res;
 }
-vector<uint32> cufinetune(const uint64 max_uniq_gene)
+vector<uint32> cufinetune(const uint64 max_uniq_gene, float quantile, float finetune_thre, int finetune_times)
 {
     Timer timer("s");
 
@@ -1300,9 +1306,10 @@ vector<uint32> cufinetune(const uint64 max_uniq_gene)
         }
 
         //cout<<"cell: "<<i<<" "<<top_labels.size()<<endl;
-        while (top_labels.size() > 1)
+        int times = 0;
+        while (top_labels.size() > 1 && (finetune_times == 0 || times++ < finetune_times))
         {
-            top_labels = finetune_round(i, top_labels, max_uniq_gene);
+            top_labels = finetune_round(i, top_labels, max_uniq_gene, quantile, finetune_thre);
         }
 
         // TODO: why top labels can be empty

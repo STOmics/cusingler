@@ -15,9 +15,9 @@ bool initGPU(const int gpuid);
 // for step: score data
 bool        copyin_score(InputData& rawdata);
 bool        destroy_score();
-vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores);
+vector<int> get_label(InputData& rawdata, const uint64 max_uniq_gene, int cores, float quantile, float finetune_thre);
 
 // for step: fintune
 bool                copyin(InputData& rawdata);
 bool                destroy();
-std::vector<uint32> cufinetune(const uint64 max_uniq_gene);
+std::vector<uint32> cufinetune(const uint64 max_uniq_gene, float quantile, float finetune_thre, int finetune_times);
