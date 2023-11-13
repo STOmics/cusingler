@@ -123,19 +123,29 @@ class CMakeBuild(build_ext):
         )
 
 
+with open("README.md", "r") as fh:
+    long_description = fh.read()
+
 # The information here can also be placed in setup.cfg - better separation of
 # logic and declaration, and simpler if you include description/version in a file.
 setup(
     name="cusingler",
-    version="0.0.1",
+    version="1.1.0",
     author="zhaofuxiang",
-    author_email="zhaofuxiang@genomics.cn",
+    author_email="zhaofuxiang@stomics.tech",
     description="Accelerate cell annotation in SingleR by GPU",
-    long_description="",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/STOmics/cusingler",
     ext_modules=[CMakeExtension("cusingler.")],
     cmdclass={"build_ext": CMakeBuild},
     zip_safe=False,
     install_requires=["h5py"],
     extras_require={"test": ["pytest>=6.0"], },
     python_requires=">=3.7",
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+        ],
 )

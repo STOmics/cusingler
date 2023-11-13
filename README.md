@@ -29,6 +29,8 @@ python test/test_basic.py data/GSE84133_GSM2230761_mouse1.h5ad data/GSE84133_GSM
 
 详情见脚本 *test/test_basic.py*
 
+注意: 由于h5ad格式可能存在不同字段,如果脚本报错需要修改正确的字段以保证程序能获取到数据
+
 ## 输入文件要求
 
 * ref/qry输入文件均需有/X/data /X/indices /X/indptr 存储矩阵数据; 有/var/_index 存储基因名
